@@ -12,11 +12,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("Exporter");
   const [viewReport, setViewReport] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  
 
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
 
-  // Filter reports by type
   const filteredReports = reports.filter(r => r.type === activeTab);
 
   return (
@@ -26,31 +24,36 @@ export default function App() {
         setActiveTab={setActiveTab}
         reports={filteredReports}
         onView={setViewReport}
-        onDelete={(r) =>
-          setReports(reports.filter(rep => rep !== r))
-        }
+        onDelete={(r) => setReports(reports.filter(rep => rep !== r))}
       />
       <div className="main">
-  {!viewReport && <Header clients={clients} setClients={setClients} onAddReport={() => setShowModal(true)} />}
-  
-  {viewReport ? (
-    <ReportTable report={viewReport} />
-  ) : (
-    <div className="placeholder">
-      <h3>Select a report or add a new one</h3>
-    </div>
-  )}
+        {!viewReport && (
+          <Header
+            clients={clients}
+            setClients={setClients}
+            onAddReport={() => setShowModal(true)}
+          />
+        )}
 
-  {showModal && (
-    <AddReportModal
-      clients={clients}
-      onSave={(newReport) => {
-        setReports([...reports, newReport]);
-        setShowModal(false);
-      }}
-      onClose={() => setShowModal(false)}
-     />
-      )}
+        {viewReport ? (
+          <ReportTable report={viewReport} />
+        ) : (
+          <div className="placeholder">
+            <h3>Select a report or add a new one</h3>
+          </div>
+        )}
+
+        {showModal && (
+          <AddReportModal
+            clients={clients}
+            onSave={(newReport) => {
+              setReports([...reports, newReport]);
+              setShowModal(false);
+            }}
+            onClose={() => setShowModal(false)}
+          />
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+}
