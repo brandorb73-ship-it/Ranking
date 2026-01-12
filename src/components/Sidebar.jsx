@@ -1,25 +1,33 @@
-export default function Sidebar({ reports, onSelect }) {
+export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDelete }) {
   return (
     <div className="sidebar">
-      <h3>Reports</h3>
+      <div className="tab-buttons">
+        <button
+          className={`tab-btn ${activeTab === "Exporter" ? "active" : ""}`}
+          onClick={() => setActiveTab("Exporter")}
+        >
+          Exporter Ranking
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "Importer" ? "active" : ""}`}
+          onClick={() => setActiveTab("Importer")}
+        >
+          Importer Ranking
+        </button>
+      </div>
 
-      <h4>Exporter Ranking</h4>
-      {reports
-        .filter(r => r.type === "Exporter")
-        .map(r => (
-          <div key={r.title} onClick={() => onSelect(r)}>
-            {r.title}
+      <div className="report-list">
+        {reports.length === 0 && <p className="empty-msg">No reports yet</p>}
+        {reports.map((r, idx) => (
+          <div key={idx} className="report-item">
+            <span>{r.title}</span>
+            <div className="report-actions">
+              <button className="btn" onClick={() => onView(r)}>View</button>
+              <button className="btn delete" onClick={() => onDelete(r)}>Delete</button>
+            </div>
           </div>
         ))}
-
-      <h4>Importer Ranking</h4>
-      {reports
-        .filter(r => r.type === "Importer")
-        .map(r => (
-          <div key={r.title} onClick={() => onSelect(r)}>
-            {r.title}
-          </div>
-        ))}
+      </div>
     </div>
   );
 }
