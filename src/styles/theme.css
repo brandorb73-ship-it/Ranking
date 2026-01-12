@@ -1,213 +1,136 @@
-body {
+/* Global */
+body, html, #root {
   margin: 0;
-  font-family: "Segoe UI", Arial, sans-serif;
-  background: #0b1c2d;
-  color: #e0e0e0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  background-color: #f0f2f5; /* light grey main background */
+  color: #0a1f44; /* dark blue text */
 }
 
+/* App container */
 .app {
   display: flex;
   height: 100vh;
+  width: 100%;
 }
 
 /* Sidebar */
 .sidebar {
-  width: 260px;
-  background: #102a43;
+  width: 220px;
+  background-color: #0a1f44; /* dark blue */
+  color: #fff;
   padding: 15px;
-  display: flex;
-  flex-direction: column;
+  box-sizing: border-box;
 }
 
-.tab-buttons {
-  display: flex;
-  margin-bottom: 15px;
+.sidebar h2 {
+  margin-top: 0;
+  font-size: 18px;
 }
 
-.tab-btn {
-  flex: 1;
-  padding: 8px;
-  background: #0b1c2d;
-  color: #e0e0e0;
-  border: none;
+/* Sidebar report list */
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sidebar li {
+  margin: 8px 0;
   cursor: pointer;
 }
 
-.tab-btn.active {
-  background: #1b3a57;
+.sidebar li.active {
   font-weight: bold;
+  text-decoration: underline;
 }
 
-.report-list {
+/* Main content */
+.main {
   flex: 1;
+  padding: 20px;
+  background-color: #e5e8ed; /* light grey */
   overflow-y: auto;
-}
-
-.report-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  padding: 6px;
-  background: #0b1c2d;
-  border-radius: 4px;
-}
-
-.report-actions button {
-  margin-left: 4px;
 }
 
 /* Header */
 .header {
   display: flex;
   justify-content: space-between;
-  padding: 15px;
-  background: #0b1c2d;
+  align-items: center;
+  margin-bottom: 20px;
+  background-color: #0a1f44;
+  color: #fff;
+  padding: 10px 15px;
+  border-radius: 6px;
 }
 
-.search-input {
-  padding: 6px;
+/* Header buttons */
+.header input, .header select {
+  margin-right: 10px;
+  padding: 5px 8px;
   border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.header button {
+  background-color: #1e3a8a; /* corporate blue */
+  color: #fff;
   border: none;
-}
-
-.header-buttons .btn {
-  margin-left: 10px;
-}
-
-/* Buttons */
-.btn {
   padding: 6px 12px;
-  border: none;
   border-radius: 4px;
   cursor: pointer;
-  background: #1b3a57;
-  color: #fff;
 }
 
-.btn:hover {
-  background: #2a4a6b;
+.header button:hover {
+  opacity: 0.9;
 }
 
-.btn.primary {
-  background: #007bff;
+/* Placeholder */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60%;
 }
 
-.btn.primary:hover {
-  background: #0056b3;
+.placeholder h3 {
+  font-size: 20px;
+  color: #0a1f44;
 }
 
-.btn.delete {
-  background: #d9534f;
-}
-
-.btn.delete:hover {
-  background: #c9302c;
-}
-
-/* Modal */
+/* Modal overlay */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
-  right:0;
-  bottom:0;
-  background: rgba(0,0,0,0.5);
-  display:flex;
-  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
   align-items: center;
+  justify-content: center;
   z-index: 1000;
 }
 
-.modal {
-  background: #f2f2f2;
-  color: #111;
+/* Modal content */
+.modal-content {
+  background-color: #f0f2f5;
   padding: 20px;
-  border-radius: 8px;
+  border-radius: 6px;
   width: 400px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
 }
 
-.modal-row {
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
+/* Buttons */
+button {
+  cursor: pointer;
 }
 
-.modal-row label {
-  margin-bottom: 4px;
-  font-weight: bold;
-}
-
-.modal-row input,
-.modal-row select {
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* Table */
-.report-table-container {
-  padding: 20px;
-  overflow-x: auto;
-}
-
-.report-title {
-  color: #007bff;
-}
-
-.report-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.report-table th {
-  background: #1b3a57;
+button.primary {
+  background-color: #1e3a8a;
   color: #fff;
-  padding: 8px;
 }
 
-.report-table td {
-  padding: 6px;
-  border-bottom: 1px solid #ccc;
-}
-
-.total-row {
-  font-weight: bold;
-  background: #d0d0d0;
-  color: #111;
-}
-
-/* Back Button */
-.back-button-container {
-  padding: 10px;
-}
-
-.placeholder {
-  padding: 20px;
-  text-align: center;
-  color: #999;
-}
-
-.filter-input {
-  width: 90%;
-  padding: 2px 4px;
-  margin-top: 4px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-}
-.report-table-container button {
-  margin-bottom: 10px;
-}
-a {
-  color: #007bff;
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
+button:hover {
+  opacity: 0.9;
 }
