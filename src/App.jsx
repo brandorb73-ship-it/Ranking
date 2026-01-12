@@ -31,36 +31,25 @@ export default function App() {
         }
       />
       <div className="main">
-        {!viewReport ? (
-          <>
-            <Header onAddReport={() => setShowModal(true)} />
-            <Header clients={clients} setClients={setClients} onAddReport={() => setShowModal(true)} />
-          </>
-        ) : (
-          <div className="back-button-container">
-            <button className="btn" onClick={() => setViewReport(null)}>← Back</button>
-          </div>
-        )}
-
-        {viewReport ? (
-          <ReportTable report={viewReport} />
-        ) : (
-          <div className="placeholder">
-            <h3>Select a report or add a new one</h3>
-          </div>
-        )}
-
-       {showModal && (
-  <AddReportModal
-    clients={clients}
-    onSave={(newReport) => {
-      setReports([...reports, newReport]); // Add new report
-      setShowModal(false); // Close modal
-    }}
-    onClose={() => setShowModal(false)}
-  />
-)}
-      </div>
+  {!viewReport && <Header clients={clients} setClients={setClients} onAddReport={() => setShowModal(true)} />}
+  
+  {viewReport ? (
+    <ReportTable report={viewReport} />
+  ) : (
+    <div className="placeholder">
+      <h3>Select a report or add a new one</h3>
     </div>
-  );
-}
+  )}
+
+  {showModal && (
+    <AddReportModal
+      clients={clients}
+      onSave={(newReport) => {
+        setReports([...reports, newReport]);
+        setShowModal(false);
+      }}
+      onClose={() => setShowModal(false)}
+    />
+  )}
+</div>
+
