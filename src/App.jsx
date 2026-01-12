@@ -26,6 +26,7 @@ export default function App() {
         onView={setViewReport}
         onDelete={(r) => setReports(reports.filter(rep => rep !== r))}
       />
+
       <div className="main">
         {!viewReport && (
           <Header
