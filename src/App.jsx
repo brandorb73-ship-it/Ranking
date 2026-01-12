@@ -6,12 +6,13 @@ import AddReportModal from "./components/AddReportModal";
 import ReportTable from "./components/ReportTable";
 
 export default function App() {
+  const [clients, setClients] = useState([]);
   const [loggedIn, setLoggedIn] = useState(false);
   const [reports, setReports] = useState([]);
   const [activeTab, setActiveTab] = useState("Exporter");
   const [viewReport, setViewReport] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [clients, setClients] = useState([]);
+  
 
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
 
@@ -33,6 +34,7 @@ export default function App() {
         {!viewReport ? (
           <>
             <Header onAddReport={() => setShowModal(true)} />
+            <Header clients={clients} setClients={setClients} onAddReport={() => setShowModal(true)} />
           </>
         ) : (
           <div className="back-button-container">
@@ -48,15 +50,16 @@ export default function App() {
           </div>
         )}
 
-        {showModal && (
-          <AddReportModal
-            onClose={() => setShowModal(false)}
-            onSave={(r) => {
-              setReports([...reports, r]);
-              setShowModal(false);
-            }}
-          />
-        )}
+       {showModal && (
+  <AddReportModal
+    clients={clients}
+    onSave={(newReport) => {
+      setReports([...reports, newReport]); // Add new report
+      setShowModal(false); // Close modal
+    }}
+    onClose={() => setShowModal(false)}
+  />
+)}
       </div>
     </div>
   );
