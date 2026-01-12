@@ -36,13 +36,13 @@ export default function App() {
           />
         )}
 
-        {viewReport ? (
-          <ReportTable report={viewReport} />
-        ) : (
-          <div className="placeholder">
-            <h3>Select a report or add a new one</h3>
-          </div>
-        )}
+       {viewReport ? (
+  <ReportTable report={viewReport} />
+) : (
+  <div className="placeholder">
+    <h3>Select a report or add a new one</h3>
+  </div>
+)}
 
         {showModal && (
           <AddReportModal
