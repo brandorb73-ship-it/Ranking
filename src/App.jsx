@@ -49,5 +49,8 @@ export default function App() {
         setShowModal(false);
       }}
       onClose={() => setShowModal(false)}
-    />
-  )}
+     />
+      )}
+    </div>
+  </div>
+);
