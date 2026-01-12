@@ -11,6 +11,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("Exporter");
   const [viewReport, setViewReport] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [clients, setClients] = useState([]);
 
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
 
