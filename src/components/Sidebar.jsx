@@ -1,10 +1,12 @@
 import React from "react";
 
-export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDelete }) {
+export default function Sidebar({ activeTab, setActiveTab, savedViews = [], onView, onDelete }) {
   return (
     <div className="sidebar">
-      <h2>Reports</h2>
-      <ul>
+      <h2>Saved Intelligence Views</h2>
+
+      {/* Tab switcher */}
+      <ul className="tab-list">
         <li
           className={activeTab === "Exporter" ? "active" : ""}
           onClick={() => setActiveTab("Exporter")}
@@ -19,16 +21,21 @@ export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDe
         </li>
       </ul>
 
-      {reports.length > 0 && (
-        <ul>
-          {reports.map((r, idx) => (
-            <li key={idx}>
-              {r.title}{" "}
-              <button onClick={() => onView(r)}>View</button>{" "}
-              <button onClick={() => onDelete(r)}>Delete</button>
+      {/* Views list */}
+      {savedViews.length > 0 ? (
+        <ul className="view-list">
+          {savedViews.map((view, idx) => (
+            <li key={idx} className="view-item">
+              <span className="view-title">{view.title}</span>
+              <div className="view-actions">
+                <button className="btn secondary" onClick={() => onView(view)}>View</button>
+                <button className="btn danger" onClick={() => onDelete(view)}>Delete</button>
+              </div>
             </li>
           ))}
         </ul>
+      ) : (
+        <p className="no-views">No saved views for this tab.</p>
       )}
     </div>
   );
