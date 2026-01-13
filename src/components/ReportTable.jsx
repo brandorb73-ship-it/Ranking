@@ -8,28 +8,68 @@ export default function ReportTable({ report, onBack }) {
   const [filter, setFilter] = useState({});
 
   useEffect(() => {
-    if (!report?.csv) return;
+    if (!report?.dataset) return setRows([]);
 
-    Papa.parse(report.csv, {
+    Papa.parse(report.dataset, {
       download: true,
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const data = results.data.map((row) => {
+        let data = results.data.map((row) => {
           ["Transactions", "Weight(Kg)", "Amount($)", "Quantity"].forEach((k) => {
-            if (row[k]) {
-              row[k] = Number(String(row[k]).replace(/,/g, "")) || 0;
-            }
+            if (row[k]) row[k] = Number(String(row[k]).replace(/,/g, "")) || 0;
           });
           return row;
         });
+
+        // Apply saved intelligence view filters
+        if (report.filters) {
+          if (report.filters.country?.length) {
+            data = data.filter(row => report.filters.country.includes(row.Country));
+          }
+          if (report.filters.minAmount) {
+            data = data.filter(row => Number(row["Amount($)"]) >= report.filters.minAmount);
+          }
+          if (report.filters.maxAmount) {
+            data = data.filter(row => Number(row["Amount($)"]) <= report.filters.maxAmount);
+          }
+        }
+
+        // Apply sorting based on viewType
+        switch (report.viewType) {
+          case "BY_VALUE":
+            data.sort((a, b) => (b["Amount($)"] || 0) - (a["Amount($)"] || 0));
+            break;
+          case "BY_WEIGHT":
+            data.sort((a, b) => (b["Weight(Kg)"] || 0) - (a["Weight(Kg)"] || 0));
+            break;
+          case "BY_TXNS":
+            data.sort((a, b) => (b["Transactions"] || 0) - (a["Transactions"] || 0));
+            break;
+          case "BY_COUNTRY":
+            data.sort((a, b) => (a.Country || "").localeCompare(b.Country || ""));
+            break;
+          default:
+            break;
+        }
+
+        // Add Phase 1-lite risk flags
+        data = data.map(row => {
+          const flags = [];
+          if ((row["Weight(Kg)"] || 0) > 10000 && (row["Amount($)"] || 0) < 5000) flags.push("⚠ Under-valued");
+          if ((row["Transactions"] || 0) > 100) flags.push("⚠ Structuring");
+          if ((row.CountryPercent || 0) > 80) flags.push("⚠ Concentration");
+          return { ...row, RiskFlags: flags.join(", ") };
+        });
+
         setRows(data);
       },
+      error: () => setRows([])
     });
   }, [report]);
 
   const handleFilter = (key, value) => {
-    setFilter((prev) => ({ ...prev, [key]: value }));
+    setFilter(prev => ({ ...prev, [key]: value }));
   };
 
   const filteredRows = rows.filter((r) =>
@@ -43,7 +83,8 @@ export default function ReportTable({ report, onBack }) {
 
   const exportPDF = () => {
     const el = document.getElementById("report-table");
-    html2canvas(el).then((canvas) => {
+    if (!el) return;
+    html2canvas(el).then(canvas => {
       const img = canvas.toDataURL("image/png");
       const pdf = new jsPDF("l", "pt", "a4");
       pdf.addImage(img, "PNG", 20, 20, 800, 0);
@@ -51,9 +92,7 @@ export default function ReportTable({ report, onBack }) {
     });
   };
 
-  if (!rows.length) {
-    return <div className="empty-state">Loading report…</div>;
-  }
+  if (!rows.length) return <div className="empty-state">Loading report…</div>;
 
   return (
     <div className="report-wrapper">
@@ -72,10 +111,10 @@ export default function ReportTable({ report, onBack }) {
                   <div className="th-title">{h}</div>
                   <select
                     value={filter[h] || ""}
-                    onChange={(e) => handleFilter(h, e.target.value)}
+                    onChange={e => handleFilter(h, e.target.value)}
                   >
                     <option value="">All</option>
-                    {[...new Set(rows.map((r) => r[h]).filter(Boolean))].map((v) => (
+                    {[...new Set(rows.map(r => r[h]).filter(Boolean))].map(v => (
                       <option key={v} value={v}>{v}</option>
                     ))}
                   </select>
@@ -91,6 +130,8 @@ export default function ReportTable({ report, onBack }) {
                   <td key={k}>
                     {k === "Url" ? (
                       <a href={v} target="_blank" rel="noreferrer">Link</a>
+                    ) : k === "RiskFlags" ? (
+                      <span style={{ color: "orange", fontWeight: "bold" }}>{v}</span>
                     ) : typeof v === "number" ? v.toFixed(2) : v}
                   </td>
                 ))}
