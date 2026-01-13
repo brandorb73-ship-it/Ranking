@@ -52,18 +52,14 @@ export default function App() {
         )}
 
         {showModal && (
-          <AddReportModal
-            clients={clients}
-            datasets={datasets}
-            onSave={(newView, newDataset) => {
-              if (newDataset) setDatasets([...datasets, newDataset]);
-              if (newView) setSavedViews([...savedViews, newView]);
-              setShowModal(false);
-            }}
-            onClose={() => setShowModal(false)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
+  <AddReportModal
+    clients={clients}
+    datasets={datasets}
+    onSave={(newView, newDataset) => {
+      if (newDataset) setDatasets((prev) => [...prev, newDataset]); // append safely
+      if (newView) setSavedViews((prev) => [...prev, newView]);       // append safely
+      setShowModal(false);
+    }}
+    onClose={() => setShowModal(false)}
+  />
+)}

@@ -1,42 +1,77 @@
-import React from "react";
+import { useState } from "react";
+import Login from "./components/Login";
+import Sidebar from "./components/Sidebar";
+import Header from "./components/Header";
+import AddReportModal from "./components/AddReportModal";
+import ReportTable from "./components/ReportTable";
 
-export default function Sidebar({ activeTab, setActiveTab, savedViews = [], onView, onDelete }) {
+export default function App() {
+  const [clients, setClients] = useState([]);
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  // Phase 1: Saved Intelligence Views
+  const [savedViews, setSavedViews] = useState([]);
+  const [datasets, setDatasets] = useState([]);
+
+  const [activeTab, setActiveTab] = useState("Exporter");
+  const [viewReport, setViewReport] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+
+  if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
+
   return (
-    <div className="sidebar">
-      <h2>Saved Intelligence Views</h2>
+    <div className="app">
+      {/* Sidebar */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        savedViews={savedViews}
+        onView={(view) => setViewReport(view)}
+        onDelete={(view) => setSavedViews(savedViews.filter(v => v !== view))}
+      />
 
-      {/* Tab switcher */}
-      <ul className="tab-list">
-        <li
-          className={activeTab === "Exporter" ? "active" : ""}
-          onClick={() => setActiveTab("Exporter")}
-        >
-          Exporter Ranking
-        </li>
-        <li
-          className={activeTab === "Importer" ? "active" : ""}
-          onClick={() => setActiveTab("Importer")}
-        >
-          Importer Ranking
-        </li>
-      </ul>
+      {/* Main content */}
+      <div className="main">
+        {!viewReport && (
+          <Header
+            clients={clients}
+            setClients={setClients}
+            onAddReport={() => setShowModal(true)}
+          />
+        )}
 
-      {/* Views list */}
-      {savedViews.length > 0 ? (
-        <ul className="view-list">
-          {savedViews.map((view, idx) => (
-            <li key={idx} className="view-item">
-              <span className="view-title">{view.title}</span>
-              <div className="view-actions">
-                <button className="btn secondary" onClick={() => onView(view)}>View</button>
-                <button className="btn danger" onClick={() => onDelete(view)}>Delete</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="no-views">No saved views for this tab.</p>
-      )}
+        {/* Report Table */}
+        {viewReport && (
+          <ReportTable
+            report={viewReport}
+            onBack={() => setViewReport(null)}
+          />
+        )}
+
+        {/* Add Intelligence View Modal */}
+        {showModal && (
+          <AddReportModal
+            clients={clients}
+            datasets={datasets}
+            onSave={(newView, newDataset) => {
+              // Save dataset if new
+              if (newDataset) setDatasets([...datasets, newDataset]);
+
+              // Save intelligence view
+              setSavedViews([...savedViews, newView]);
+              setShowModal(false);
+            }}
+            onClose={() => setShowModal(false)}
+          />
+        )}
+
+        {/* Placeholder */}
+        {!viewReport && !showModal && (
+          <div className="placeholder">
+            <h3>Select a report or add a new one</h3>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
