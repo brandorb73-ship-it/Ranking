@@ -51,13 +51,14 @@ export default function App() {
           </div>
         )}
 
-        {showModal && (
+   {/* Add Intelligence View Modal */}
+{showModal && (
   <AddReportModal
     clients={clients}
     datasets={datasets}
     onSave={(newView, newDataset) => {
-      if (newDataset) setDatasets((prev) => [...prev, newDataset]); // append safely
-      if (newView) setSavedViews((prev) => [...prev, newView]);       // append safely
+      if (newDataset) setDatasets([...datasets, newDataset]);
+      setSavedViews([...savedViews, newView]);
       setShowModal(false);
     }}
     onClose={() => setShowModal(false)}
