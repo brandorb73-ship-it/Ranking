@@ -9,7 +9,6 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [loggedIn, setLoggedIn] = useState(false);
 
-  // Phase 1: Saved Intelligence Views
   const [savedViews, setSavedViews] = useState([]);
   const [datasets, setDatasets] = useState([]);
 
@@ -27,7 +26,9 @@ export default function App() {
         setActiveTab={setActiveTab}
         savedViews={savedViews}
         onView={(view) => setViewReport(view)}
-        onDelete={(view) => setSavedViews(savedViews.filter(v => v !== view))}
+        onDelete={(view) =>
+          setSavedViews(savedViews.filter((v) => v !== view))
+        }
       />
 
       {/* Main content */}
@@ -49,21 +50,18 @@ export default function App() {
         )}
 
         {/* Add Intelligence View Modal */}
-        {showModal && (
+        {showModal ? (
           <AddReportModal
             clients={clients}
             datasets={datasets}
             onSave={(newView, newDataset) => {
-              // Save dataset if new
               if (newDataset) setDatasets([...datasets, newDataset]);
-
-              // Save intelligence view
               setSavedViews([...savedViews, newView]);
               setShowModal(false);
             }}
             onClose={() => setShowModal(false)}
           />
-        )}
+        ) : null}
 
         {/* Placeholder */}
         {!viewReport && !showModal && (
