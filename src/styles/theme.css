@@ -1,88 +1,110 @@
-/* Global */
+/* ================= GLOBAL ================= */
 body, html, #root {
   margin: 0;
   padding: 0;
   font-family: Arial, sans-serif;
-  background-color: #f0f2f5; /* light grey main background */
-  color: #0a1f44; /* dark blue text */
+  background-color: #f0f2f5; /* light grey */
+  color: #0a1f44; /* dark blue */
 }
 
-/* App container */
+button {
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+/* ================= APP ================= */
 .app {
   display: flex;
   height: 100vh;
   width: 100%;
 }
 
-/* Sidebar */
+/* ================= SIDEBAR ================= */
 .sidebar {
-  width: 220px;
+  width: 240px;
   background-color: #0a1f44; /* dark blue */
   color: #fff;
   padding: 15px;
   box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .sidebar h2 {
   margin-top: 0;
   font-size: 18px;
+  margin-bottom: 15px;
 }
 
-/* Sidebar report list */
-.sidebar ul {
+/* Tabs */
+.tab-list {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 15px;
+}
+
+.tab-list li {
+  margin: 6px 0;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.tab-list li.active,
+.tab-list li:hover {
+  background-color: #1e3a8a;
+  font-weight: bold;
+}
+
+/* Views list */
+.view-list {
   list-style: none;
   padding: 0;
 }
 
-.sidebar li {
-  margin: 8px 0;
-  cursor: pointer;
+.view-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1e2b5a;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
 }
 
-.sidebar li.active {
-  font-weight: bold;
-  text-decoration: underline;
+.view-title {
+  flex: 1;
 }
 
-/* Main content */
+.view-actions button {
+  margin-left: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.btn.secondary {
+  background-color: #2e4a8a;
+  color: #fff;
+}
+
+.btn.danger {
+  background-color: #d9534f;
+  color: #fff;
+}
+
+.no-views {
+  font-size: 12px;
+  color: #cbd5e1;
+  margin-top: 10px;
+}
+
+/* ================= MAIN ================= */
 .main {
   flex: 1;
   padding: 20px;
   background-color: #e5e8ed; /* light grey */
   overflow-y: auto;
-}
-
-/* Header */
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  background-color: #0a1f44;
-  color: #fff;
-  padding: 10px 15px;
-  border-radius: 6px;
-}
-
-/* Header buttons */
-.header input, .header select {
-  margin-right: 10px;
-  padding: 5px 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-}
-
-.header button {
-  background-color: #1e3a8a; /* corporate blue */
-  color: #fff;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.header button:hover {
-  opacity: 0.9;
 }
 
 /* Placeholder */
@@ -98,7 +120,38 @@ body, html, #root {
   color: #0a1f44;
 }
 
-/* Modal overlay */
+/* ================= HEADER ================= */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  background-color: #0a1f44;
+  color: #fff;
+  padding: 10px 15px;
+  border-radius: 6px;
+}
+
+.header input,
+.header select {
+  margin-right: 10px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.header button {
+  background-color: #1e3a8a; /* corporate blue */
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+
+.header button:hover {
+  opacity: 0.9;
+}
+
+/* ================= MODAL ================= */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -112,86 +165,14 @@ body, html, #root {
   z-index: 1000;
 }
 
-/* Modal content */
 .modal-content {
   background-color: #f0f2f5;
   padding: 20px;
   border-radius: 6px;
-  width: 400px;
+  width: 420px;
+  max-height: 90%;
+  overflow-y: auto;
   box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-}
-
-/* Buttons */
-button {
-  cursor: pointer;
-}
-
-button.primary {
-  background-color: #1e3a8a;
-  color: #fff;
-}
-
-button:hover {
-  opacity: 0.9;
-}
-
-.report-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #f8f9fb;
-  font-size: 14px;
-}
-
-.report-table thead {
-  background: #0a1f44; /* dark blue */
-  color: #ffffff;
-}
-
-.report-table th {
-  padding: 10px;
-  text-align: left;
-;
-  font-weight: 600;
-  border-bottom: 2px solid #1e3a8a;
-}
-
-.report-table td {
-  padding: 8px 10px;
-  border-bottom: 1px solid #d6dae1;
-}
-
-.report-table tbody tr:nth-child(even) {
-  background-color: #eef1f6;
-}
-
-.report-table tbody tr:hover {
-  background-color: #dde3ee;
-}
-
-/* numeric alignment */
-.report-table td.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* total row */
-.report-table tfoot td {
-  font-weight: bold;
-  background: #e2e8f0;
-  border-top: 2px solid #0a1f44;
-}
-
-.th-title {
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-th select {
-  width: 100%;
-  padding: 4px;
-  border-radius: 4px;
-  border: none;
-  font-size: 12px;
 }
 
 .modal-content h2 {
@@ -228,12 +209,78 @@ th select {
   margin-top: 20px;
 }
 
+button.primary {
+  background-color: #1e3a8a;
+  color: #fff;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+/* ================= TABLE ================= */
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #f8f9fb;
+  font-size: 14px;
+  position: relative;
+}
+
+.report-table thead {
+  background: #0a1f44;
+  color: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.report-table th {
+  padding: 10px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #1e3a8a;
+}
+
+.report-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #d6dae1;
+}
+
+.report-table tbody tr:nth-child(even) {
+  background-color: #eef1f6;
+}
+
+.report-table tbody tr:hover {
+  background-color: #dde3ee;
+}
+
+.th-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+th select,
 .filter-select {
   width: 100%;
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
   border: 1px solid #cbd5e1;
   font-size: 12px;
-  background: #ffffff;
+}
+
+.report-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.total-row {
+  font-weight: bold;
+  background: #e2e8f0;
+  border-top: 2px solid #0a1f44;
+}
+
+.risk-flag {
+  color: orange;
+  font-weight: bold;
 }
