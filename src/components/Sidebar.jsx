@@ -4,6 +4,7 @@ export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDe
   return (
     <div className="sidebar">
       <h2>Reports</h2>
+
       <ul className="tab-list">
         <li
           className={activeTab === "Exporter" ? "active" : ""}
@@ -19,21 +20,25 @@ export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDe
         </li>
       </ul>
 
-      <ul className="view-list">
-        {reports.length > 0 ? (
-          reports.map((r, idx) => (
+      {reports.length > 0 ? (
+        <ul className="view-list">
+          {reports.map((r, idx) => (
             <li key={idx} className="view-item">
               <span className="view-title">{r.title}</span>
               <div className="view-actions">
-                <button className="btn secondary" onClick={() => onView(r)}>View</button>
-                <button className="btn danger" onClick={() => onDelete(r)}>Delete</button>
+                <button className="btn secondary" onClick={() => onView(r)}>
+                  View
+                </button>
+                <button className="btn danger" onClick={() => onDelete(r)}>
+                  Delete
+                </button>
               </div>
             </li>
-          ))
-        ) : (
-          <li className="no-views">No saved views</li>
-        )}
-      </ul>
+          ))}
+        </ul>
+      ) : (
+        <div className="no-views">No saved views</div>
+      )}
     </div>
   );
 }

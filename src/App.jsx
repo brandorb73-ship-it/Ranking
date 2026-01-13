@@ -5,39 +5,28 @@ import AddReportModal from "./components/AddReportModal";
 import ReportTable from "./components/ReportTable";
 
 export default function App() {
-  // Clients list
   const [clients, setClients] = useState([]);
-
-  // Modal open state
+  const [datasets, setDatasets] = useState([]); // stores CSV datasets
+  const [savedViews, setSavedViews] = useState([]); // stores intelligence views
+  const [activeTab, setActiveTab] = useState("Exporter");
+  const [viewReport, setViewReport] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  // All datasets uploaded
-  const [datasets, setDatasets] = useState([]);
-
-  // Saved intelligence views
-  const [savedViews, setSavedViews] = useState([]);
-
-  // Active tab for Sidebar
-  const [activeTab, setActiveTab] = useState("Exporter");
-
-  // Currently viewed report
-  const [viewReport, setViewReport] = useState(null);
-
-  // Sidebar filtered views
-  const filteredViews = savedViews.filter((v) => v.baseType === activeTab);
+  // Filter reports for active tab
+  const filteredReports = savedViews.filter((r) => r.baseType === activeTab);
 
   return (
     <div className="app">
-      {/* Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        reports={filteredViews}
+        reports={filteredReports}
         onView={setViewReport}
-        onDelete={(r) => setSavedViews(savedViews.filter((v) => v !== r))}
+        onDelete={(r) =>
+          setSavedViews(savedViews.filter((rep) => rep !== r))
+        }
       />
 
-      {/* Main content */}
       <div className="main">
         {!viewReport && (
           <Header
@@ -47,27 +36,24 @@ export default function App() {
           />
         )}
 
-        {/* Show report table if viewing */}
-        {viewReport && (
+        {viewReport ? (
           <ReportTable
-            report={viewReport || { dataset: "", viewType: "BY_VALUE", filters: {} }}
+            report={viewReport}
             onBack={() => setViewReport(null)}
           />
+        ) : (
+          <div className="placeholder">
+            <h3>Select a report or add a new one</h3>
+          </div>
         )}
 
-        {/* Add Report / Intelligence View Modal */}
         {showModal && (
           <AddReportModal
             clients={clients}
             datasets={datasets}
             onSave={(newView, newDataset) => {
-              // Save new dataset if provided
               if (newDataset) setDatasets([...datasets, newDataset]);
-
-              // Save new intelligence view
               setSavedViews([...savedViews, newView]);
-
-              // Close modal
               setShowModal(false);
             }}
             onClose={() => setShowModal(false)}
