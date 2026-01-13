@@ -57,7 +57,10 @@ export default function ReportTable({ report }) {
     });
   };
 
-  if (!rows.length) return <p>Loading report…</p>;
+if (!rows.length) return <p>Loading report…</p>;
+if (!rows.length) {
+  return <div className="empty-state">No data available</div>;
+}
 
   return (
     <div className="report-table-container">
