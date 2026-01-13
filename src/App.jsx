@@ -20,19 +20,24 @@ export default function App() {
 
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
 
-  // Filter saved views by active tab
-  const filteredViews = savedViews.filter(v => v.baseType === activeTab);
+  // Filter saved views by active tab safely
+  const filteredViews = savedViews?.filter(v => v.baseType === activeTab) || [];
 
   // Load CSV data when activeView changes
   useEffect(() => {
-    if (!activeView) return;
+    if (!activeView?.dataset) {
+      setTableData([]);
+      return;
+    }
+
     const datasetUrl = activeView.dataset;
 
     Papa.parse(datasetUrl, {
       download: true,
       header: true,
+      skipEmptyLines: true,
       complete: function(results) {
-        let data = results.data;
+        let data = results.data || [];
 
         // Apply filters
         if (activeView.filters) {
@@ -52,16 +57,16 @@ export default function App() {
         // Apply sorting based on viewType
         switch (activeView.viewType) {
           case "BY_VALUE":
-            data.sort((a,b) => Number(b.Amount) - Number(a.Amount));
+            data.sort((a, b) => Number(b.Amount || 0) - Number(a.Amount || 0));
             break;
           case "BY_WEIGHT":
-            data.sort((a,b) => Number(b.Weight) - Number(a.Weight));
+            data.sort((a, b) => Number(b.Weight || 0) - Number(a.Weight || 0));
             break;
           case "BY_TXNS":
-            data.sort((a,b) => Number(b.Transactions) - Number(a.Transactions));
+            data.sort((a, b) => Number(b.Transactions || 0) - Number(a.Transactions || 0));
             break;
           case "BY_COUNTRY":
-            data.sort((a,b) => a.Country.localeCompare(b.Country));
+            data.sort((a, b) => (a.Country || "").localeCompare(b.Country || ""));
             break;
           default:
             break;
@@ -70,9 +75,9 @@ export default function App() {
         // Add Phase 1-lite risk flags
         data = data.map(row => {
           const flags = [];
-          if(Number(row.Weight) > 10000 && Number(row.Amount) < 5000) flags.push("⚠ Under-valued");
-          if(Number(row.Transactions) > 100) flags.push("⚠ Structuring");
-          if(Number(row.CountryPercent) > 80) flags.push("⚠ Concentration");
+          if (Number(row.Weight || 0) > 10000 && Number(row.Amount || 0) < 5000) flags.push("⚠ Under-valued");
+          if (Number(row.Transactions || 0) > 100) flags.push("⚠ Structuring");
+          if (Number(row.CountryPercent || 0) > 80) flags.push("⚠ Concentration");
           return { ...row, RiskFlags: flags.join(", ") };
         });
 
@@ -88,16 +93,18 @@ export default function App() {
   return (
     <div className="app">
       {/* Sidebar shows Saved Intelligence Views */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        savedViews={filteredViews}
-        onView={setActiveView}
-        onDelete={(view) => setSavedViews(savedViews.filter(v => v !== view))}
-      />
+      {Sidebar && (
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          savedViews={filteredViews}
+          onView={setActiveView}
+          onDelete={(view) => setSavedViews(savedViews.filter(v => v !== view))}
+        />
+      )}
 
       <div className="main">
-        {!activeView && (
+        {!activeView && Header && (
           <Header
             clients={clients}
             setClients={setClients}
@@ -105,15 +112,21 @@ export default function App() {
           />
         )}
 
-        {activeView ? (
-          <ReportTable report={activeView} data={tableData} />
+        {activeView && ReportTable ? (
+          tableData.length > 0 ? (
+            <ReportTable report={activeView} data={tableData} />
+          ) : (
+            <div className="placeholder">
+              <h3>Loading CSV data...</h3>
+            </div>
+          )
         ) : (
           <div className="placeholder">
             <h3>Select a saved intelligence view or add a new report</h3>
           </div>
         )}
 
-        {showModal && (
+        {showModal && AddReportModal && (
           <AddReportModal
             clients={clients}
             datasets={datasets}
