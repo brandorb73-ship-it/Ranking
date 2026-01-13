@@ -1,48 +1,47 @@
 import { useState } from "react";
 
-export default function AddReportModal({ onSave, onClose }) {
-  const [form, setForm] = useState({
-    title: "",
-    csv: "",
-    client: "",
-    type: "Exporter",
-  });
+export default function AddReportModal({ clients, onSave, onClose }) {
+  const [title, setTitle] = useState("");
+  const [csv, setCsv] = useState("");
+  const [client, setClient] = useState("");
+  const [type, setType] = useState("Exporter");
+
+  const submit = () => {
+    if (!title || !csv) return alert("Title and CSV URL required");
+    onSave({ title, csv, client, type });
+  };
 
   return (
     <div className="modal-overlay">
-      <div className="modal">
+      <div className="modal-content">
         <h2>Add New Report</h2>
+
         <div className="modal-row">
-          <label>Title</label>
-          <input
-            placeholder="Report Title"
-            onChange={e => setForm({ ...form, title: e.target.value })}
-          />
+          <label>Report Title</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} />
         </div>
+
         <div className="modal-row">
           <label>CSV URL</label>
-          <input
-            placeholder="https://docs.google.com/..."
-            onChange={e => setForm({ ...form, csv: e.target.value })}
-          />
+          <input value={csv} onChange={e => setCsv(e.target.value)} />
         </div>
+
         <div className="modal-row">
           <label>Client</label>
-          <input
-            placeholder="Client Name"
-            onChange={e => setForm({ ...form, client: e.target.value })}
-          />
+          <input value={client} onChange={e => setClient(e.target.value)} />
         </div>
+
         <div className="modal-row">
           <label>Report Type</label>
-          <select onChange={e => setForm({ ...form, type: e.target.value })}>
-            <option>Exporter</option>
-            <option>Importer</option>
+          <select value={type} onChange={e => setType(e.target.value)}>
+            <option value="Exporter">Exporter Ranking</option>
+            <option value="Importer">Importer Ranking</option>
           </select>
         </div>
+
         <div className="modal-actions">
-          <button className="btn primary" onClick={() => onSave(form)}>Publish</button>
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={submit}>Publish</button>
+          <button onClick={onClose}>Cancel</button>
         </div>
       </div>
     </div>
