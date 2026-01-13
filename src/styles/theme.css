@@ -152,6 +152,7 @@ button {
 }
 
 /* ================= MODAL ================= */
+/* Modal overlay */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -162,17 +163,19 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 9999;       /* ensure overlay is on top */
+  pointer-events: all; /* make it clickable */
 }
 
+/* Modal content */
 .modal-content {
   background-color: #f0f2f5;
   padding: 20px;
   border-radius: 6px;
-  width: 420px;
-  max-height: 90%;
-  overflow-y: auto;
+  width: 400px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  position: relative;  /* required for z-index */
+  z-index: 10000;      /* ensure button is above overlay */
 }
 
 .modal-content h2 {

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import Papa from "papaparse";
+
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -9,78 +11,96 @@ import ChartDashboard from "./components/ChartDashboard";
 export default function App() {
   const [clients, setClients] = useState([]);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [savedViews, setSavedViews] = useState([]);
+  const [datasets, setDatasets] = useState([]);
   const [activeTab, setActiveTab] = useState("Exporter");
   const [viewReport, setViewReport] = useState(null);
+  const [viewMode, setViewMode] = useState("table"); // table / charts / combined
   const [showModal, setShowModal] = useState(false);
-
-  const [datasets, setDatasets] = useState([]);
-  const [savedViews, setSavedViews] = useState([]);
-
-  // Phase 2: View mode
-  const [viewMode, setViewMode] = useState("table"); // "table" | "charts" | "combined"
 
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
 
-  const filteredViews = savedViews.filter(v => v.baseType === activeTab);
+  // ------------------------
+  // Handle view report
+  // ------------------------
+  const handleViewReport = (report) => {
+    // Parse CSV on view
+    Papa.parse(report.csv, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data.map((row) => {
+          ["Transactions", "Weight(Kg)", "Amount($)", "Quantity"].forEach((k) => {
+            if (row[k]) row[k] = Number(String(row[k]).replace(/,/g, "")) || 0;
+          });
+          return row;
+        });
+
+        setViewReport({ ...report, rows }); // store parsed rows
+      },
+    });
+  };
+
+  const filteredReports = savedViews.filter(r => r.baseType === activeTab);
 
   return (
     <div className="app">
+      {/* Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        savedViews={filteredViews}
-        onView={setViewReport}
-        onDelete={(v) => setSavedViews(savedViews.filter(sv => sv !== v))}
+        reports={filteredReports}
+        onView={handleViewReport}       // parse CSV here
+        onDelete={(r) => setSavedViews(savedViews.filter(rep => rep !== r))}
       />
 
+      {/* Main content */}
       <div className="main">
         {!viewReport && (
           <Header
             clients={clients}
             setClients={setClients}
             onAddReport={() => setShowModal(true)}
+            viewMode={viewMode}
+            setViewMode={setViewMode} // toggle table/charts/combined
           />
         )}
 
-        {viewReport && (
-          <div style={{ marginBottom: 20 }}>
-            {/* ---------------- VIEW MODE TOGGLE ---------------- */}
-            <button onClick={() => setViewMode("table")}>Table</button>
-            <button onClick={() => setViewMode("charts")}>Charts</button>
-            <button onClick={() => setViewMode("combined")}>Combined</button>
-          </div>
-        )}
-
-        {/* ---------------- MAIN CONTENT ---------------- */}
-        {viewReport && (viewMode === "table" || viewMode === "combined") && (
+        {/* Table View */}
+        {viewReport && viewMode === "table" && (
           <ReportTable
-            report={viewReport || { dataset: "", viewType: "BY_VALUE", filters: {} }}
+            report={viewReport}
             onBack={() => setViewReport(null)}
           />
         )}
 
+        {/* Charts or Combined */}
         {viewReport && (viewMode === "charts" || viewMode === "combined") && (
-          <ChartDashboard report={viewReport} />
-        )}
-
-        {showModal && (
-          <AddReportModal
-            clients={clients}
-            datasets={datasets}
-            onSave={(newView, newDataset) => {
-              if (newDataset) setDatasets([...datasets, newDataset]);
-              setSavedViews([...savedViews, newView]);
-              setShowModal(false);
-            }}
-            onClose={() => setShowModal(false)}
+          <ChartDashboard
+            data={viewReport.rows || []}   // pass parsed rows
+            savedView={viewReport}
           />
         )}
 
-        {!viewReport && (
-          <div className="placeholder">
-            <h3>Select a report or add a new one</h3>
+        {/* Combined: optionally show table below charts */}
+        {viewReport && viewMode === "combined" && viewReport.rows?.length > 0 && (
+          <div style={{ marginTop: 30 }}>
+            <ReportTable report={viewReport} onBack={() => setViewReport(null)} />
           </div>
         )}
+
+        {/* Add Report Modal */}
+<AddReportModal
+  clients={clients}
+  datasets={datasets}
+  onSave={(newView, newDataset) => {
+    if (newDataset) setDatasets([...datasets, newDataset]);
+    if (newView) setSavedViews([...savedViews, newView]);
+    setShowModal(false);
+  }}
+  onClose={() => setShowModal(false)}
+/>
       </div>
     </div>
   );

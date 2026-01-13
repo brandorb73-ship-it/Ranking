@@ -1,105 +1,124 @@
 import { useState } from "react";
 
-export default function AddReportModal({ clients, datasets = [], onSave, onClose }) {
+export default function AddReportModal({ onSave, onClose }) {
   const [title, setTitle] = useState("");
-  const [datasetUrl, setDatasetUrl] = useState(""); // new or selected dataset
-  const [selectedDataset, setSelectedDataset] = useState(""); // existing dataset URL
+  const [csv, setCsv] = useState("");
   const [client, setClient] = useState("");
-  const [baseType, setBaseType] = useState("Exporter");
-  const [viewType, setViewType] = useState("BY_VALUE");
-  const [filterCountry, setFilterCountry] = useState("");
-  const [minAmount, setMinAmount] = useState("");
-  const [maxAmount, setMaxAmount] = useState("");
+  const [type, setType] = useState("Exporter");
 
-  const submit = () => {
-    const finalDataset = datasetUrl || selectedDataset;
-    if (!title || !finalDataset) return alert("Title and CSV URL required");
+  const [filters, setFilters] = useState({
+    Country: "",
+    Transactions: "",
+    "Weight(Kg)": "",
+    "Amount($)": "",
+    Quantity: "",
+  });
 
-    const newView = {
+  // Update a single filter value
+  const handleFilterChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Handle Publish click
+  const handlePublish = (e) => {
+    e.preventDefault();     // prevent default form submission
+    e.stopPropagation();    // stop modal overlay click from bubbling
+
+    console.log("SUBMIT STATE", { title, csv, client, type, filters });
+
+    if (!title.trim() || !csv.trim()) {
+      alert("Title and CSV URL required");
+      return;
+    }
+
+    // Dataset object (stored once)
+    const newDataset = {
       title,
-      dataset: finalDataset,
+      csv,
       client,
-      baseType,
-      viewType,
-      filters: {
-        country: filterCountry ? filterCountry.split(",").map(c => c.trim()) : [],
-        minAmount: minAmount ? Number(minAmount) : undefined,
-        maxAmount: maxAmount ? Number(maxAmount) : undefined
-      },
-      sorts: [],
-      createdAt: new Date().toISOString()
+      type,
+      createdAt: new Date().toISOString(),
     };
 
-    // If user uploaded a new dataset, pass it as second argument to add to datasets
-    onSave(newView, datasetUrl ? finalDataset : null);
+    // Intelligence View object (stored in Saved Views)
+    const newView = {
+      title,
+      csv,
+      client,
+      baseType: type,
+      viewType: "BY_VALUE", // default view type
+      filters,
+      createdAt: new Date().toISOString(),
+    };
+
+    console.log("PUBLISH OK", newView, newDataset);
+
+    // Call parent callback
+    onSave(newView, newDataset);
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()} // prevent overlay click
+      >
         <h2>Add New Intelligence View</h2>
 
         <div className="modal-row">
           <label>Report Title</label>
-          <input value={title} onChange={e => setTitle(e.target.value)} />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Enter report title"
+          />
         </div>
 
         <div className="modal-row">
-          <label>Select Existing Dataset</label>
-          <select value={selectedDataset} onChange={e => setSelectedDataset(e.target.value)}>
-            <option value="">-- Select CSV --</option>
-            {datasets.map((d, idx) => (
-              <option key={idx} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="modal-row">
-          <label>Or Upload New CSV URL</label>
-          <input value={datasetUrl} onChange={e => setDatasetUrl(e.target.value)} placeholder="https://..." />
+          <label>CSV URL</label>
+          <input
+            value={csv}
+            onChange={(e) => setCsv(e.target.value)}
+            placeholder="https://example.com/data.csv"
+          />
         </div>
 
         <div className="modal-row">
           <label>Client</label>
-          <input value={client} onChange={e => setClient(e.target.value)} />
+          <input
+            value={client}
+            onChange={(e) => setClient(e.target.value)}
+            placeholder="Client name"
+          />
         </div>
 
         <div className="modal-row">
-          <label>Base Type</label>
-          <select value={baseType} onChange={e => setBaseType(e.target.value)}>
+          <label>Report Type</label>
+          <select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="Exporter">Exporter Ranking</option>
             <option value="Importer">Importer Ranking</option>
           </select>
         </div>
 
-        <div className="modal-row">
-          <label>View Type</label>
-          <select value={viewType} onChange={e => setViewType(e.target.value)}>
-            <option value="BY_VALUE">By Value</option>
-            <option value="BY_WEIGHT">By Weight</option>
-            <option value="BY_TXNS">By Transactions</option>
-            <option value="BY_COUNTRY">By Country</option>
-          </select>
-        </div>
-
-        <div className="modal-row">
-          <label>Filter: Country (comma-separated)</label>
-          <input value={filterCountry} onChange={e => setFilterCountry(e.target.value)} placeholder="USA, China" />
-        </div>
-
-        <div className="modal-row">
-          <label>Filter: Min Amount</label>
-          <input type="number" value={minAmount} onChange={e => setMinAmount(e.target.value)} />
-        </div>
-
-        <div className="modal-row">
-          <label>Filter: Max Amount</label>
-          <input type="number" value={maxAmount} onChange={e => setMaxAmount(e.target.value)} />
-        </div>
+        {/* Filters */}
+        {Object.keys(filters).map((key) => (
+          <div key={key} className="modal-row">
+            <label>{key} Filter</label>
+            <input
+              value={filters[key]}
+              onChange={(e) => handleFilterChange(key, e.target.value)}
+              placeholder={`Filter by ${key}`}
+            />
+          </div>
+        ))}
 
         <div className="modal-actions">
-          <button className="primary" onClick={submit}>Publish View</button>
-          <button onClick={onClose}>Cancel</button>
+          <button type="button" className="primary" onClick={handlePublish}>
+            Publish
+          </button>
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>
