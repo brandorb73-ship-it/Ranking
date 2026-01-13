@@ -69,22 +69,27 @@ export default function ReportTable({ report }) {
 
       <table className="report-table" id="report-table">
         <thead>
+<thead>
   <tr>
-    {Object.keys(rows[0]).map(h => (
-      <th key={h}>
-        {h}
-        <select
-          className="filter-select"
-          value={filter[h] || ""}
-          onChange={e => handleFilter(h, e.target.value)}
-        >
-          <option value="">All</option>
-          {[...new Set(rows.map(r => r[h]).filter(Boolean))].map(v => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </select>
-      </th>
-    ))}
+    {rows.length > 0 &&
+      Object.keys(rows[0]).map((h) => (
+        <th key={h}>
+          <div className="th-label">{h}</div>
+
+          <select
+            className="filter-select"
+            value={filter[h] || ""}
+            onChange={(e) => handleFilter(h, e.target.value)}
+          >
+            <option value="">All</option>
+            {[...new Set(rows.map(r => r[h]).filter(Boolean))].map(v => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </th>
+      ))}
   </tr>
 </thead>
 
@@ -112,15 +117,6 @@ export default function ReportTable({ report }) {
             <td className="num">{formatNum(total("Amount($)"))}</td>
             <td className="num">{formatNum(total("Quantity"))}</td>
             {Object.keys(rows[0]).slice(5).map((_, i) => <td key={i}></td>)}
-            <th key={h}>
-  <div className="th-title">{h}</div>
-  <select onChange={(e) => handleFilter(h, e.target.value)}>
-    <option value="">All</option>
-    {[...new Set(rows.map(r => r[h]).filter(Boolean))].map(v => (
-      <option key={v} value={v}>{v}</option>
-    ))}
-  </select>
-</th>
           </tr>
         </tfoot>
       </table>
