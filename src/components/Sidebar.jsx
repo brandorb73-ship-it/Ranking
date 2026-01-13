@@ -1,75 +1,39 @@
-import { useState } from "react";
-import Login from "./components/Login";
-import Sidebar from "./components/Sidebar";
-import Header from "./components/Header";
-import AddReportModal from "./components/AddReportModal";
-import ReportTable from "./components/ReportTable";
+import React from "react";
 
-export default function App() {
-  const [clients, setClients] = useState([]);
-  const [loggedIn, setLoggedIn] = useState(false);
-
-  const [savedViews, setSavedViews] = useState([]);
-  const [datasets, setDatasets] = useState([]);
-
-  const [activeTab, setActiveTab] = useState("Exporter");
-  const [viewReport, setViewReport] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-
-  if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
-
+export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDelete }) {
   return (
-    <div className="app">
-      {/* Sidebar */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        savedViews={savedViews}
-        onView={(view) => setViewReport(view)}
-        onDelete={(view) =>
-          setSavedViews(savedViews.filter((v) => v !== view))
-        }
-      />
+    <div className="sidebar">
+      <h2>Reports</h2>
+      <ul className="tab-list">
+        <li
+          className={activeTab === "Exporter" ? "active" : ""}
+          onClick={() => setActiveTab("Exporter")}
+        >
+          Exporter Ranking
+        </li>
+        <li
+          className={activeTab === "Importer" ? "active" : ""}
+          onClick={() => setActiveTab("Importer")}
+        >
+          Importer Ranking
+        </li>
+      </ul>
 
-      {/* Main content */}
-      <div className="main">
-        {!viewReport && (
-          <Header
-            clients={clients}
-            setClients={setClients}
-            onAddReport={() => setShowModal(true)}
-          />
+      <ul className="view-list">
+        {reports.length > 0 ? (
+          reports.map((r, idx) => (
+            <li key={idx} className="view-item">
+              <span className="view-title">{r.title}</span>
+              <div className="view-actions">
+                <button className="btn secondary" onClick={() => onView(r)}>View</button>
+                <button className="btn danger" onClick={() => onDelete(r)}>Delete</button>
+              </div>
+            </li>
+          ))
+        ) : (
+          <li className="no-views">No saved views</li>
         )}
-
-        {/* Report Table */}
-        {viewReport && (
-          <ReportTable
-            report={viewReport}
-            onBack={() => setViewReport(null)}
-          />
-        )}
-
-        {/* Add Intelligence View Modal */}
-        {showModal ? (
-          <AddReportModal
-            clients={clients}
-            datasets={datasets}
-            onSave={(newView, newDataset) => {
-              if (newDataset) setDatasets([...datasets, newDataset]);
-              setSavedViews([...savedViews, newView]);
-              setShowModal(false);
-            }}
-            onClose={() => setShowModal(false)}
-          />
-        ) : null}
-
-        {/* Placeholder */}
-        {!viewReport && !showModal && (
-          <div className="placeholder">
-            <h3>Select a report or add a new one</h3>
-          </div>
-        )}
-      </div>
+      </ul>
     </div>
   );
 }
