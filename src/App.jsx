@@ -8,27 +8,20 @@ import ChartDashboard from "./components/ChartDashboard";
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
-
   const [clients, setClients] = useState([]);
   const [reports, setReports] = useState([]);
-
   const [activeTab, setActiveTab] = useState("Exporter");
   const [viewReport, setViewReport] = useState(null);
-
   const [showModal, setShowModal] = useState(false);
 
-  // 🔹 Phase 2 view mode
+  // Phase 2 view mode
   const [viewMode, setViewMode] = useState("table"); // table | charts | combined
 
-  // 🔹 Login gate
   if (!loggedIn) {
     return <Login onLogin={() => setLoggedIn(true)} />;
   }
 
-  // 🔹 Filter reports by Exporter / Importer
-  const filteredReports = reports.filter(
-    (r) => r.baseType === activeTab
-  );
+  const filteredReports = reports.filter((r) => r.baseType === activeTab);
 
   return (
     <div className="app">
@@ -40,9 +33,7 @@ export default function App() {
           setViewReport(r);
           setViewMode("table"); // reset view when opening report
         }}
-        onDelete={(r) =>
-          setReports(reports.filter((rep) => rep !== r))
-        }
+        onDelete={(r) => setReports(reports.filter((rep) => rep !== r))}
       />
 
       <div className="main">
@@ -54,17 +45,15 @@ export default function App() {
           />
         )}
 
-        {/* ================= NO REPORT SELECTED ================= */}
         {!viewReport && (
           <div className="placeholder">
             <h3>Select a report or add a new one</h3>
           </div>
         )}
 
-        {/* ================= REPORT VIEW ================= */}
         {viewReport && (
-          <>
-            {/* 🔹 View toggle (Phase 2 ready) */}
+          <div className="report-view-container">
+            {/* 🔹 View toggle */}
             <div style={{ marginBottom: 12 }}>
               <button
                 className="btn secondary"
@@ -86,33 +75,25 @@ export default function App() {
               </button>
             </div>
 
+            {/* 🔹 CHARTS VIEW */}
+            {(viewMode === "charts" || viewMode === "combined") && (
+              <ChartDashboard
+                rows={viewReport.rows || []}
+                filteredRows={viewReport.filteredRows || []}
+              />
+            )}
+
             {/* 🔹 TABLE VIEW */}
-            {viewMode === "table" && (
+            {(viewMode === "table" || viewMode === "combined") && (
               <ReportTable
                 report={viewReport}
                 onBack={() => setViewReport(null)}
               />
             )}
+          </div>
+        )}
 
-<>
-  {/* 🔹 CHARTS VIEW */}
-  {viewReport && (viewMode === "charts" || viewMode === "combined") && (
-    <ChartDashboard
-      rows={viewReport.rows || []}
-      filteredRows={viewReport.filteredRows || []}
-    />
-  )}
-
-  {/* 🔹 TABLE VIEW */}
-  {viewReport && (viewMode === "table" || viewMode === "combined") && (
-    <ReportTable
-      report={viewReport}
-      onBack={() => setViewReport(null)}
-    />
-  )}
-</>
-
-        {/* ================= ADD REPORT MODAL ================= */}
+        {/* 🔹 ADD REPORT MODAL */}
         {showModal && (
           <AddReportModal
             onSave={(newView) => {
