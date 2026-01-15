@@ -8,35 +8,43 @@ import ChartDashboard from "./components/ChartDashboard";
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
+
   const [clients, setClients] = useState([]);
   const [reports, setReports] = useState([]);
+
   const [activeTab, setActiveTab] = useState("Exporter");
   const [viewReport, setViewReport] = useState(null);
+
   const [showModal, setShowModal] = useState(false);
 
-  // Phase 2 view mode
-  const [viewMode, setViewMode] = useState("table"); // table | charts | combined
+  // Phase 2: table | charts | combined
+  const [viewMode, setViewMode] = useState("table");
 
+  // 🔹 Login gate
   if (!loggedIn) {
     return <Login onLogin={() => setLoggedIn(true)} />;
   }
 
+  // Filter reports by Exporter / Importer
   const filteredReports = reports.filter((r) => r.baseType === activeTab);
 
   return (
     <div className="app">
+      {/* Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         reports={filteredReports}
         onView={(r) => {
           setViewReport(r);
-          setViewMode("table"); // reset view when opening report
+          setViewMode("table");
         }}
         onDelete={(r) => setReports(reports.filter((rep) => rep !== r))}
       />
 
+      {/* Main content */}
       <div className="main">
+        {/* Header */}
         {!viewReport && (
           <Header
             clients={clients}
@@ -45,15 +53,17 @@ export default function App() {
           />
         )}
 
+        {/* Placeholder if no report selected */}
         {!viewReport && (
           <div className="placeholder">
             <h3>Select a report or add a new one</h3>
           </div>
         )}
 
+        {/* ================= REPORT VIEW ================= */}
         {viewReport && (
-          <div className="report-view-container">
-            {/* 🔹 View toggle */}
+          <>
+            {/* View toggle */}
             <div style={{ marginBottom: 12 }}>
               <button
                 className="btn secondary"
@@ -75,25 +85,27 @@ export default function App() {
               </button>
             </div>
 
-            {/* 🔹 CHARTS VIEW */}
-            {(viewMode === "charts" || viewMode === "combined") && (
-              <ChartDashboard
-                rows={viewReport.rows || []}
-                filteredRows={viewReport.filteredRows || []}
-              />
-            )}
+            <div className="report-view-container">
+              {/* Charts view */}
+              {(viewMode === "charts" || viewMode === "combined") && (
+                <ChartDashboard
+                  rows={viewReport.rows || []}
+                  filteredRows={viewReport.filteredRows || []}
+                />
+              )}
 
-            {/* 🔹 TABLE VIEW */}
-            {(viewMode === "table" || viewMode === "combined") && (
-              <ReportTable
-                report={viewReport}
-                onBack={() => setViewReport(null)}
-              />
-            )}
-          </div>
+              {/* Table view */}
+              {(viewMode === "table" || viewMode === "combined") && (
+                <ReportTable
+                  report={viewReport}
+                  onBack={() => setViewReport(null)}
+                />
+              )}
+            </div>
+          </>
         )}
 
-        {/* 🔹 ADD REPORT MODAL */}
+        {/* ================= ADD REPORT MODAL ================= */}
         {showModal && (
           <AddReportModal
             onSave={(newView) => {
