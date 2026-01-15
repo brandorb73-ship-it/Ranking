@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+console.log("CHART ROWS", rows.length, filteredRows.length);
 
 /**
  * ChartDashboard

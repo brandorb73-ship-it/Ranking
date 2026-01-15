@@ -94,23 +94,23 @@ export default function App() {
               />
             )}
 
-            {/* 🔹 CHARTS VIEW */}
-            {viewMode === "charts" && (
-              <ChartDashboard report={viewReport} />
-            )}
+<>
+  {/* 🔹 CHARTS VIEW */}
+  {viewReport && (viewMode === "charts" || viewMode === "combined") && (
+    <ChartDashboard
+      rows={viewReport.rows || []}
+      filteredRows={viewReport.filteredRows || []}
+    />
+  )}
 
-            {/* 🔹 COMBINED VIEW */}
-            {viewMode === "combined" && (
-              <>
-                <ChartDashboard report={viewReport} />
-                <ReportTable
-                  report={viewReport}
-                  onBack={() => setViewReport(null)}
-                />
-              </>
-            )}
-          </>
-        )}
+  {/* 🔹 TABLE VIEW */}
+  {viewReport && (viewMode === "table" || viewMode === "combined") && (
+    <ReportTable
+      report={viewReport}
+      onBack={() => setViewReport(null)}
+    />
+  )}
+</>
 
         {/* ================= ADD REPORT MODAL ================= */}
         {showModal && (
