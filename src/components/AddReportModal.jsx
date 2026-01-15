@@ -1,12 +1,12 @@
 import { useState } from "react";
+import Papa from "papaparse";
 
-export default function AddReportModal({ clients, datasets, onSave, onClose }) {
+export default function AddReportModal({ onSave, onClose }) {
   const [title, setTitle] = useState("");
   const [csv, setCsv] = useState("");
   const [client, setClient] = useState("");
   const [type, setType] = useState("Exporter");
 
-  // Filters for Phase 1
   const [filters, setFilters] = useState({
     Country: "",
     Transactions: "",
@@ -25,25 +25,39 @@ export default function AddReportModal({ clients, datasets, onSave, onClose }) {
       return;
     }
 
-    const newDataset = {
-      title,
-      csv,
-      client,
-      type,
-      createdAt: new Date().toISOString(),
-    };
+    // Parse CSV rows before saving
+    Papa.parse(csv, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data.map((row) => {
+          ["Transactions", "Weight(Kg)", "Amount($)", "Quantity"].forEach((k) => {
+            if (row[k]) row[k] = Number(String(row[k]).replace(/,/g, "")) || 0;
+          });
+          return row;
+        });
 
-    const newView = {
-      title,
-      csv,
-      client,
-      baseType: type,
-      viewType: "BY_VALUE",
-      filters,
-      createdAt: new Date().toISOString(),
-    };
+        const newView = {
+          title,
+          csv,
+          client,
+          baseType: type,
+          viewType: "BY_VALUE",
+          filters,
+          rows,           // important for charts
+          filteredRows: rows, // initially same as rows
+          createdAt: new Date().toISOString(),
+        };
 
-    onSave(newView, newDataset);
+        console.log("PUBLISH OK", newView);
+
+        onSave(newView);
+      },
+      error: (err) => {
+        alert("Error parsing CSV: " + err.message);
+      },
+    });
   };
 
   return (
