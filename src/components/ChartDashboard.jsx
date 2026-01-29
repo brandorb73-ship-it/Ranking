@@ -1,179 +1,180 @@
-import React, { useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import {
+  ResponsiveContainer,
   ScatterChart,
   Scatter,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   BarChart,
   Bar,
-  Legend,
+  Cell,
 } from "recharts";
-import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
+
+import {
+  ComposableMap,
+  Geographies,
+  Geography,
+  Marker,
+} from "react-simple-maps";
+
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// Simple world map topojson
 const geoUrl =
-  "https://raw.githubusercontent.com/deldersveld/topojson/master/world-countries.json";
+  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
+/* ---------------- COUNTRY COORDS (SAFE SET) ---------------- */
+const COUNTRY_COORDS = {
+  "United States": [-98, 38],
+  China: [104, 35],
+  India: [78, 21],
+  Brazil: [-51, -10],
+  Russia: [105, 60],
+  Germany: [10, 51],
+  France: [2, 46],
+  "United Kingdom": [0, 54],
+  Japan: [138, 37],
+  Australia: [134, -25],
+};
 
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
+
+  /* ---------------- DATA SOURCE ---------------- */
   const data = filteredRows.length ? filteredRows : rows;
 
-  // Scatter plot data
-  const scatterData = useMemo(() => {
-    return data.map((r) => ({
-      x: r["Weight(Kg)"] || 0,
-      y: r["Amount($)"] || 0,
-      country: r.Country,
-      amount: r["Amount($)"],
-      weight: r["Weight(Kg)"],
+  if (!data || !data.length) {
+    return <div style={{ padding: 20 }}>No data available for charts</div>;
+  }
+
+  /* ---------------- SCATTER DATA ---------------- */
+  const scatterData = useMemo(
+    () =>
+      data
+        .map((r) => ({
+          weight: Number(r["Weight(Kg)"] || r.Weight || 0),
+          amount: Number(r["Amount($)"] || r.Amount || 0),
+        }))
+        .filter((r) => r.weight > 0 && r.amount > 0),
+    [data]
+  );
+
+  /* ---------------- BAR DATA ---------------- */
+  const barData = useMemo(() => {
+    const agg = {};
+    data.forEach((r) => {
+      const country = r.Country || "Unknown";
+      agg[country] =
+        (agg[country] || 0) +
+        Number(r["Amount($)"] || r.Amount || 0);
+    });
+    return Object.entries(agg).map(([k, v]) => ({
+      country: k,
+      value: v,
     }));
   }, [data]);
 
-  // Bar chart data
-  const barData = useMemo(() => {
-    const map = {};
-    data.forEach((r) => {
-      if (!r.Country) return;
-      if (!map[r.Country]) map[r.Country] = 0;
-      map[r.Country] += Number(r.Transactions) || 0;
-    });
-    return Object.entries(map).map(([country, val]) => ({ country, val }));
-  }, [data]);
-
-  // Heatmap data
+  /* ---------------- HEATMAP DATA ---------------- */
   const heatmapData = useMemo(() => {
-    const map = {};
+    const agg = {};
     data.forEach((r) => {
-      if (!r.Country) return;
-      if (!map[r.Country]) map[r.Country] = 0;
-      map[r.Country] += Number(r.Transactions) || 0;
+      const c = r.Country;
+      if (!c || !COUNTRY_COORDS[c]) return;
+      agg[c] = (agg[c] || 0) + 1;
     });
-    return map;
+    return agg;
   }, [data]);
 
   const maxHeat = Math.max(...Object.values(heatmapData), 1);
 
-  // PDF export
-  const exportPDF = () => {
+  /* ---------------- PDF EXPORT ---------------- */
+  const exportPDF = async () => {
     if (!chartRef.current) return;
-    html2canvas(chartRef.current).then((canvas) => {
-      const img = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("l", "pt", "a4");
-      pdf.addImage(img, "PNG", 20, 20, 800, 0);
-      pdf.save("charts.pdf");
-    });
+    const canvas = await html2canvas(chartRef.current, { scale: 2 });
+    const img = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    pdf.addImage(img, "PNG", 10, 10, 190, 0);
+    pdf.save("charts.pdf");
   };
 
-  if (!data.length) {
-    return <div>No data available for charts</div>;
-  }
-
+  /* ================= RENDER ================= */
   return (
     <div ref={chartRef} style={{ padding: 20 }}>
+      {/* ---------- ACTIONS ---------- */}
       <div style={{ marginBottom: 12 }}>
         <button className="btn secondary" onClick={exportPDF}>
-          Export Charts to PDF
+          Export PDF
         </button>
       </div>
 
-      {/* Scatter Plot */}
-      <h3>Scatter: Weight vs Amount</h3>
+      {/* ================= SCATTER ================= */}
+      <h3>Weight vs Amount (Outlier Detection)</h3>
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis type="number" dataKey="x" name="Weight(Kg)" />
-          <YAxis type="number" dataKey="y" name="Amount($)" />
-          <Tooltip
-            cursor={{ strokeDasharray: "3 3" }}
-            formatter={(value, name, props) => {
-              return name === "y"
-                ? `$${value}`
-                : value;
-            }}
-          />
-          <Scatter
-            name="Transactions"
-            data={scatterData}
-            fill="#1e3a8a"
-            shape="circle"
-          />
+          <XAxis dataKey="weight" name="Weight (Kg)" />
+          <YAxis dataKey="amount" name="Amount ($)" />
+          <Tooltip />
+          <Scatter data={scatterData} fill="#2563eb" />
         </ScatterChart>
       </ResponsiveContainer>
 
-      {/* Bar Chart */}
-      <h3>Transactions by Country</h3>
+      {/* ================= BAR ================= */}
+      <h3 style={{ marginTop: 30 }}>Transaction Value by Country</h3>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={barData}>
-          <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="country" />
           <YAxis />
           <Tooltip />
-          <Legend />
-          <Bar dataKey="val" fill="#1e3a8a" />
+          <Bar dataKey="value">
+            {barData.map((_, i) => (
+              <Cell key={i} fill="#16a34a" />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
 
-      {/* Heatmap */}
-      <h3>Country Heatmap</h3>
-      <div style={{ maxWidth: "100%", overflowX: "auto", marginTop: 12 }}>
-        <ComposableMap projectionConfig={{ scale: 150 }}>
-          <Geographies geography={geoUrl}>
-            {({ geographies }) =>
-              geographies.map((geo) => {
-                const val = heatmapData[geo.properties.NAME] || 0;
-                return (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    fill={val ? `rgba(30,58,138,${val / maxHeat})` : "#EEE"}
-                    stroke="#FFF"
-                  />
-                );
-              })
-            }
-          </Geographies>
+      {/* ================= HEATMAP ================= */}
+      <h3 style={{ marginTop: 30 }}>
+        Country Transaction Intensity Heatmap
+      </h3>
 
-          {/* Add circle markers proportional to transactions */}
-   {Object.entries(heatmapData).map(([country, val], idx) => {
-  // Only render markers for countries we have coordinates for
-  const coordsLookup = {
-    "United States": [-98, 38],
-    China: [104, 35],
-    India: [78, 21],
-    Brazil: [-51, -10],
-    Russia: [105, 60],
-    Germany: [10, 51],
-    France: [2, 46],
-    "United Kingdom": [0, 54],
-  };
-  const coords = coordsLookup[country];
-  if (!coords) return null; // skip countries without coordinates
-  return (
-    <Marker key={idx} coordinates={coords}>
-      <circle
-        r={Math.min(Math.sqrt(val) * 1.5, 20)} // cap radius to avoid huge circles
-        fill="orange"
-        opacity={0.7}
-      />
-    </Marker>
-  );
-})}
+      <ComposableMap projectionConfig={{ scale: 140 }}>
+        <Geographies geography={geoUrl}>
+          {({ geographies }) =>
+            geographies.map((geo) => {
+              const name = geo.properties.NAME;
+              const val = heatmapData[name] || 0;
+              return (
+                <Geography
+                  key={geo.rsmKey}
+                  geography={geo}
+                  fill={
+                    val
+                      ? `rgba(234,88,12,${val / maxHeat})`
+                      : "#EEE"
+                  }
+                  stroke="#CCC"
+                />
+              );
+            })
+          }
+        </Geographies>
 
-            const coords = coordsLookup[country];
-            if (!coords) return null;
-            return (
-              <Marker key={idx} coordinates={coords}>
-                <circle r={Math.sqrt(val) * 1.5} fill="orange" opacity={0.6} />
-              </Marker>
-            );
-          })}
-        </ComposableMap>
-      </div>
+        {Object.entries(heatmapData).map(([country, val], idx) => {
+          const coords = COUNTRY_COORDS[country];
+          if (!coords) return null;
+          return (
+            <Marker key={idx} coordinates={coords}>
+              <circle
+                r={Math.min(Math.sqrt(val) * 2, 18)}
+                fill="orange"
+                opacity={0.7}
+              />
+            </Marker>
+          );
+        })}
+      </ComposableMap>
     </div>
   );
 }
