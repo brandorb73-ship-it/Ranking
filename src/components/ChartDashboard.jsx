@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -24,7 +24,7 @@ import html2canvas from "html2canvas";
 const geoUrl =
   "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
-/* ===================== HELPERS (SAFE, PURE) ===================== */
+/* ===================== HELPERS ===================== */
 
 function deriveRiskFlags(row, context) {
   const flags = [];
@@ -47,7 +47,7 @@ function deriveRiskFlags(row, context) {
   return flags;
 }
 
-/* ---------------- COUNTRY COORDS (SAFE SET) ---------------- */
+/* ---------------- COUNTRY COORDS ---------------- */
 
 const COUNTRY_COORDS = {
   "United States": [-98, 38],
@@ -66,6 +66,7 @@ const COUNTRY_COORDS = {
 
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
+  const [showOnlyRisky, setShowOnlyRisky] = useState(false);
 
   /* ---------------- DATA SOURCE ---------------- */
   const data = filteredRows.length ? filteredRows : rows;
@@ -74,7 +75,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     return <div style={{ padding: 20 }}>No data available for charts</div>;
   }
 
-  /* ===================== STEP 3: RISK CONTEXT ===================== */
+  /* ===================== RISK CONTEXT ===================== */
   const context = useMemo(() => {
     const amounts = data.map(r =>
       Number(r["Amount($)"] || r.Amount || 0)
@@ -111,7 +112,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     };
   }, [data]);
 
-  /* ===================== ENRICH DATA ONCE ===================== */
+  /* ===================== ENRICH DATA ===================== */
   const enrichedData = useMemo(
     () =>
       data.map(r => ({
@@ -122,17 +123,20 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   );
 
   /* ===================== SCATTER DATA ===================== */
-  const scatterData = useMemo(
-    () =>
-      enrichedData
-        .map(r => ({
-          weight: Number(r["Weight(Kg)"] || r.Weight || 0),
-          amount: Number(r["Amount($)"] || r.Amount || 0),
-          riskFlags: r.riskFlags || [],
-        }))
-        .filter(r => r.weight > 0 && r.amount > 0),
-    [enrichedData]
-  );
+  const scatterData = useMemo(() => {
+    const base = enrichedData
+      .map(r => ({
+        weight: Number(r["Weight(Kg)"] || r.Weight || 0),
+        amount: Number(r["Amount($)"] || r.Amount || 0),
+        riskFlags: r.riskFlags || [],
+        Country: r.Country,
+      }))
+      .filter(r => r.weight > 0 && r.amount > 0);
+
+    return showOnlyRisky
+      ? base.filter(r => r.riskFlags.length > 0)
+      : base;
+  }, [enrichedData, showOnlyRisky]);
 
   /* ===================== BAR DATA ===================== */
   const barData = useMemo(() => {
@@ -147,6 +151,17 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       country: k,
       value: v,
     }));
+  }, [enrichedData]);
+
+  /* Track risky countries for bar chart highlighting */
+  const riskyCountryMap = useMemo(() => {
+    const map = {};
+    enrichedData.forEach(r => {
+      if (r.riskFlags.length && r.Country) {
+        map[r.Country] = true;
+      }
+    });
+    return map;
   }, [enrichedData]);
 
   /* ===================== HEATMAP DATA ===================== */
@@ -175,10 +190,37 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   /* ===================== RENDER ===================== */
   return (
     <div ref={chartRef} style={{ padding: 20 }}>
+      {/* ---------- ACTIONS ---------- */}
       <div style={{ marginBottom: 12 }}>
         <button className="btn secondary" onClick={exportPDF}>
           Export PDF
         </button>
+      </div>
+
+      {/* ---------- TOGGLE & LEGEND ---------- */}
+      <label style={{ display: "block", marginBottom: 6 }}>
+        <input
+          type="checkbox"
+          checked={showOnlyRisky}
+          onChange={e => setShowOnlyRisky(e.target.checked)}
+          style={{ marginRight: 6 }}
+        />
+        Show only risky entities
+      </label>
+
+      <div style={{ fontSize: 12, color: "#444", marginBottom: 12 }}>
+        <span
+          style={{
+            display: "inline-block",
+            width: 12,
+            height: 12,
+            border: "1.5px dashed #111",
+            borderRadius: "50%",
+            marginRight: 6,
+            verticalAlign: "middle",
+          }}
+        />
+        Risk-flagged entity (heuristic-based)
       </div>
 
       {/* ===================== SCATTER ===================== */}
@@ -187,7 +229,24 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         <ScatterChart>
           <XAxis dataKey="weight" name="Weight (Kg)" />
           <YAxis dataKey="amount" name="Amount ($)" />
-          <Tooltip />
+
+          {/* Custom tooltip with flag explanation */}
+          <Tooltip
+            formatter={(value, name, props) => {
+              const { payload } = props;
+              if (!payload) return value;
+
+              if (payload.riskFlags.length) {
+                return [
+                  value,
+                  `${name}
+⚠ ${payload.riskFlags.join(" | ")}`
+                ];
+              }
+              return value;
+            }}
+          />
+
           <Scatter
             data={scatterData}
             shape={({ cx, cy, payload }) => (
@@ -217,8 +276,13 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           <YAxis />
           <Tooltip />
           <Bar dataKey="value">
-            {barData.map((_, i) => (
-              <Cell key={i} fill="#16a34a" />
+            {barData.map((d, i) => (
+              <Cell
+                key={i}
+                fill="#16a34a"
+                stroke={riskyCountryMap[d.country] ? "#000" : "none"}
+                strokeWidth={riskyCountryMap[d.country] ? 2 : 0}
+              />
             ))}
           </Bar>
         </BarChart>
