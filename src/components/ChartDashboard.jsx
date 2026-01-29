@@ -139,19 +139,31 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           </Geographies>
 
           {/* Add circle markers proportional to transactions */}
-          {Object.entries(heatmapData).map(([country, val], idx) => {
-            // Basic country coordinates
-            // Ideally use a lookup table for accurate lat/lon
-            const coordsLookup = {
-              "United States": [-98, 38],
-              China: [104, 35],
-              India: [78, 21],
-              Brazil: [-51, -10],
-              Russia: [105, 60],
-              Germany: [10, 51],
-              France: [2, 46],
-              UK: [0, 54],
-            };
+   {Object.entries(heatmapData).map(([country, val], idx) => {
+  // Only render markers for countries we have coordinates for
+  const coordsLookup = {
+    "United States": [-98, 38],
+    China: [104, 35],
+    India: [78, 21],
+    Brazil: [-51, -10],
+    Russia: [105, 60],
+    Germany: [10, 51],
+    France: [2, 46],
+    "United Kingdom": [0, 54],
+  };
+  const coords = coordsLookup[country];
+  if (!coords) return null; // skip countries without coordinates
+  return (
+    <Marker key={idx} coordinates={coords}>
+      <circle
+        r={Math.min(Math.sqrt(val) * 1.5, 20)} // cap radius to avoid huge circles
+        fill="orange"
+        opacity={0.7}
+      />
+    </Marker>
+  );
+})}
+
             const coords = coordsLookup[country];
             if (!coords) return null;
             return (
