@@ -24,7 +24,31 @@ import html2canvas from "html2canvas";
 const geoUrl =
   "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
+/* ===================== HELPERS (SAFE, PURE) ===================== */
+
+function deriveRiskFlags(row, context) {
+  const flags = [];
+
+  const amount = Number(row["Amount($)"] || row.Amount || 0);
+  const weight = Number(row["Weight(Kg)"] || row.Weight || 0);
+
+  if (amount > context.p95Amount && weight < context.p25Weight) {
+    flags.push("High value / low weight");
+  }
+
+  if (weight > context.p95Weight && amount < context.p25Amount) {
+    flags.push("High weight / low value");
+  }
+
+  if (row.Country && context.singleCountryMap[row.Country]) {
+    flags.push("Country concentration");
+  }
+
+  return flags;
+}
+
 /* ---------------- COUNTRY COORDS (SAFE SET) ---------------- */
+
 const COUNTRY_COORDS = {
   "United States": [-98, 38],
   China: [104, 35],
@@ -38,6 +62,8 @@ const COUNTRY_COORDS = {
   Australia: [134, -25],
 };
 
+/* ===================== COMPONENT ===================== */
+
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
 
@@ -48,22 +74,70 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     return <div style={{ padding: 20 }}>No data available for charts</div>;
   }
 
-  /* ---------------- SCATTER DATA ---------------- */
-  const scatterData = useMemo(
+  /* ===================== STEP 3: RISK CONTEXT ===================== */
+  const context = useMemo(() => {
+    const amounts = data.map(r =>
+      Number(r["Amount($)"] || r.Amount || 0)
+    );
+    const weights = data.map(r =>
+      Number(r["Weight(Kg)"] || r.Weight || 0)
+    );
+
+    const sortedA = [...amounts].sort((a, b) => a - b);
+    const sortedW = [...weights].sort((a, b) => a - b);
+
+    const pct = (arr, p) =>
+      arr[Math.floor(arr.length * p)] || 0;
+
+    const countryCount = {};
+    data.forEach(r => {
+      if (!r.Country) return;
+      countryCount[r.Country] = (countryCount[r.Country] || 0) + 1;
+    });
+
+    const singleCountryMap = {};
+    Object.keys(countryCount).forEach(c => {
+      if (countryCount[c] / data.length > 0.8) {
+        singleCountryMap[c] = true;
+      }
+    });
+
+    return {
+      p95Amount: pct(sortedA, 0.95),
+      p25Amount: pct(sortedA, 0.25),
+      p95Weight: pct(sortedW, 0.95),
+      p25Weight: pct(sortedW, 0.25),
+      singleCountryMap,
+    };
+  }, [data]);
+
+  /* ===================== ENRICH DATA ONCE ===================== */
+  const enrichedData = useMemo(
     () =>
-      data
-        .map((r) => ({
-          weight: Number(r["Weight(Kg)"] || r.Weight || 0),
-          amount: Number(r["Amount($)"] || r.Amount || 0),
-        }))
-        .filter((r) => r.weight > 0 && r.amount > 0),
-    [data]
+      data.map(r => ({
+        ...r,
+        riskFlags: deriveRiskFlags(r, context),
+      })),
+    [data, context]
   );
 
-  /* ---------------- BAR DATA ---------------- */
+  /* ===================== SCATTER DATA ===================== */
+  const scatterData = useMemo(
+    () =>
+      enrichedData
+        .map(r => ({
+          weight: Number(r["Weight(Kg)"] || r.Weight || 0),
+          amount: Number(r["Amount($)"] || r.Amount || 0),
+          riskFlags: r.riskFlags || [],
+        }))
+        .filter(r => r.weight > 0 && r.amount > 0),
+    [enrichedData]
+  );
+
+  /* ===================== BAR DATA ===================== */
   const barData = useMemo(() => {
     const agg = {};
-    data.forEach((r) => {
+    enrichedData.forEach(r => {
       const country = r.Country || "Unknown";
       agg[country] =
         (agg[country] || 0) +
@@ -73,22 +147,22 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       country: k,
       value: v,
     }));
-  }, [data]);
+  }, [enrichedData]);
 
-  /* ---------------- HEATMAP DATA ---------------- */
+  /* ===================== HEATMAP DATA ===================== */
   const heatmapData = useMemo(() => {
     const agg = {};
-    data.forEach((r) => {
+    enrichedData.forEach(r => {
       const c = r.Country;
       if (!c || !COUNTRY_COORDS[c]) return;
       agg[c] = (agg[c] || 0) + 1;
     });
     return agg;
-  }, [data]);
+  }, [enrichedData]);
 
   const maxHeat = Math.max(...Object.values(heatmapData), 1);
 
-  /* ---------------- PDF EXPORT ---------------- */
+  /* ===================== PDF EXPORT ===================== */
   const exportPDF = async () => {
     if (!chartRef.current) return;
     const canvas = await html2canvas(chartRef.current, { scale: 2 });
@@ -98,28 +172,44 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     pdf.save("charts.pdf");
   };
 
-  /* ================= RENDER ================= */
+  /* ===================== RENDER ===================== */
   return (
     <div ref={chartRef} style={{ padding: 20 }}>
-      {/* ---------- ACTIONS ---------- */}
       <div style={{ marginBottom: 12 }}>
         <button className="btn secondary" onClick={exportPDF}>
           Export PDF
         </button>
       </div>
 
-      {/* ================= SCATTER ================= */}
-      <h3>Weight vs Amount (Outlier Detection)</h3>
+      {/* ===================== SCATTER ===================== */}
+      <h3>Weight vs Amount (Risk Annotations)</h3>
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart>
           <XAxis dataKey="weight" name="Weight (Kg)" />
           <YAxis dataKey="amount" name="Amount ($)" />
           <Tooltip />
-          <Scatter data={scatterData} fill="#2563eb" />
+          <Scatter
+            data={scatterData}
+            shape={({ cx, cy, payload }) => (
+              <g>
+                <circle cx={cx} cy={cy} r={4} fill="#2563eb" />
+                {payload.riskFlags.length > 0 && (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={8}
+                    fill="none"
+                    stroke="#111"
+                    strokeDasharray="3,2"
+                  />
+                )}
+              </g>
+            )}
+          />
         </ScatterChart>
       </ResponsiveContainer>
 
-      {/* ================= BAR ================= */}
+      {/* ===================== BAR ===================== */}
       <h3 style={{ marginTop: 30 }}>Transaction Value by Country</h3>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={barData}>
@@ -134,7 +224,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         </BarChart>
       </ResponsiveContainer>
 
-      {/* ================= HEATMAP ================= */}
+      {/* ===================== HEATMAP ===================== */}
       <h3 style={{ marginTop: 30 }}>
         Country Transaction Intensity Heatmap
       </h3>
@@ -142,7 +232,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       <ComposableMap projectionConfig={{ scale: 140 }}>
         <Geographies geography={geoUrl}>
           {({ geographies }) =>
-            geographies.map((geo) => {
+            geographies.map(geo => {
               const name = geo.properties.NAME;
               const val = heatmapData[name] || 0;
               return (
