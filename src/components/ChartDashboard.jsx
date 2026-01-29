@@ -26,23 +26,33 @@ const geoUrl =
 
 /* ===================== HELPERS ===================== */
 
+function formatNumber(value, decimals = 2) {
+  if (value == null) return "-";
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function formatInteger(value) {
+  if (value == null) return "-";
+  return Math.round(value).toLocaleString();
+}
+
 function deriveRiskFlags(row, context) {
   const flags = [];
-
   const amount = Number(row["Amount($)"] || row.Amount || 0);
   const weight = Number(row["Weight(Kg)"] || row.Weight || 0);
+  const txn = Number(row.txnCount || row.Txns || 0);
 
-  if (amount > context.p95Amount && weight < context.p25Weight) {
-    flags.push("High value / low weight");
-  }
+  // Flexible thresholds
+  const { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap } =
+    context;
 
-  if (weight > context.p95Weight && amount < context.p25Amount) {
-    flags.push("High weight / low value");
-  }
-
-  if (row.Country && context.singleCountryMap[row.Country]) {
-    flags.push("Country concentration");
-  }
+  if (amount > p75Amount && weight < p25Weight) flags.push("High value / low weight");
+  if (weight > p75Weight && amount < p25Amount) flags.push("High weight / low value");
+  if (txn > p75Txn && amount < p25Amount) flags.push("High frequency / low value");
+  if (row.Country && singleCountryMap[row.Country]) flags.push("Country concentration");
 
   return flags;
 }
@@ -60,6 +70,19 @@ const COUNTRY_COORDS = {
   "United Kingdom": [0, 54],
   Japan: [138, 37],
   Australia: [134, -25],
+  Singapore: [103.8, 1.35],
+  Canada: [-106, 56],
+  Mexico: [-102, 23],
+  Italy: [12.5, 42.5],
+  Spain: [-3, 40],
+  Netherlands: [5.3, 52.1],
+  Belgium: [4.5, 50.8],
+  SouthKorea: [127.5, 36],
+  Turkey: [35, 39],
+  SaudiArabia: [45, 25],
+  UAE: [53, 24],
+  Argentina: [-64, -34],
+  SouthAfrica: [24, -29],
 };
 
 /* ===================== COMPONENT ===================== */
@@ -69,59 +92,52 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const [showOnlyRisky, setShowOnlyRisky] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState(null);
 
-  /* ---------------- DATA SOURCE ---------------- */
   const data = filteredRows.length ? filteredRows : rows;
 
   if (!data || !data.length) {
     return <div style={{ padding: 20 }}>No data available for charts</div>;
   }
 
-  /* ===================== RISK CONTEXT ===================== */
+  /* ===================== CONTEXT FOR RISK FLAGS ===================== */
   const context = useMemo(() => {
-    const amounts = data.map(r =>
-      Number(r["Amount($)"] || r.Amount || 0)
-    );
-    const weights = data.map(r =>
-      Number(r["Weight(Kg)"] || r.Weight || 0)
-    );
+    const amounts = data.map(r => Number(r["Amount($)"] || r.Amount || 0));
+    const weights = data.map(r => Number(r["Weight(Kg)"] || r.Weight || 0));
+    const txns = data.map(r => Number(r.txnCount || r.Txns || 0));
 
-    const sortedA = [...amounts].sort((a, b) => a - b);
-    const sortedW = [...weights].sort((a, b) => a - b);
+    const sorted = arr => [...arr].sort((a, b) => a - b);
+    const pct = (arr, p) => arr[Math.floor(arr.length * p)] || 0;
 
-    const pct = (arr, p) =>
-      arr[Math.floor(arr.length * p)] || 0;
+    const n = data.length;
+    const smallDataset = n < 100;
 
+    const p75Amount = pct(sorted(amounts), smallDataset ? 0.5 : 0.75);
+    const p25Amount = pct(sorted(amounts), 0.25);
+    const p75Weight = pct(sorted(weights), smallDataset ? 0.5 : 0.75);
+    const p25Weight = pct(sorted(weights), 0.25);
+    const p75Txn = pct(sorted(txns), smallDataset ? 0.5 : 0.75);
+    const p25Txn = pct(sorted(txns), 0.25);
+
+    // Identify single-country concentration (>50% for small datasets)
     const countryCount = {};
     data.forEach(r => {
       if (!r.Country) return;
       countryCount[r.Country] = (countryCount[r.Country] || 0) + 1;
     });
-
     const singleCountryMap = {};
     Object.keys(countryCount).forEach(c => {
-      if (countryCount[c] / data.length > 0.8) {
-        singleCountryMap[c] = true;
-      }
+      if (countryCount[c] / n > (smallDataset ? 0.5 : 0.8)) singleCountryMap[c] = true;
     });
 
-    return {
-      p95Amount: pct(sortedA, 0.95),
-      p25Amount: pct(sortedA, 0.25),
-      p95Weight: pct(sortedW, 0.95),
-      p25Weight: pct(sortedW, 0.25),
-      singleCountryMap,
-    };
+    return { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap };
   }, [data]);
 
   /* ===================== ENRICH DATA ===================== */
-  const enrichedData = useMemo(
-    () =>
-      data.map(r => ({
-        ...r,
-        riskFlags: deriveRiskFlags(r, context),
-      })),
-    [data, context]
-  );
+  const enrichedData = useMemo(() => {
+    return data.map(r => ({
+      ...r,
+      riskFlags: deriveRiskFlags(r, context),
+    }));
+  }, [data, context]);
 
   /* ===================== SCATTER DATA ===================== */
   const scatterData = useMemo(() => {
@@ -135,9 +151,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       }))
       .filter(r => r.weight > 0 && r.amount > 0);
 
-    return showOnlyRisky
-      ? base.filter(r => r.riskFlags.length > 0)
-      : base;
+    return showOnlyRisky ? base.filter(r => r.riskFlags.length > 0) : base;
   }, [enrichedData, showOnlyRisky]);
 
   /* ===================== BAR DATA ===================== */
@@ -146,22 +160,15 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     enrichedData.forEach(r => {
       const country = r.Country || "Unknown";
       agg[country] =
-        (agg[country] || 0) +
-        Number(r["Amount($)"] || r.Amount || 0);
+        (agg[country] || 0) + Number(r["Amount($)"] || r.Amount || 0);
     });
-    return Object.entries(agg).map(([k, v]) => ({
-      country: k,
-      value: v,
-    }));
+    return Object.entries(agg).map(([k, v]) => ({ country: k, value: v }));
   }, [enrichedData]);
 
-  /* Track risky countries for bar chart highlighting */
   const riskyCountryMap = useMemo(() => {
     const map = {};
     enrichedData.forEach(r => {
-      if (r.riskFlags.length && r.Country) {
-        map[r.Country] = true;
-      }
+      if (r.riskFlags.length && r.Country) map[r.Country] = true;
     });
     return map;
   }, [enrichedData]);
@@ -236,22 +243,19 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       <h3>Weight vs Amount (Risk Annotations)</h3>
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart>
-          <XAxis dataKey="weight" name="Weight (Kg)" />
-          <YAxis dataKey="amount" name="Amount ($)" />
+          <XAxis dataKey="weight" name="Weight (Kg)" tickFormatter={v => formatNumber(v)} />
+          <YAxis dataKey="amount" name="Amount ($)" tickFormatter={v => formatNumber(v)} />
 
           <Tooltip
             formatter={(value, name, props) => {
               const { payload } = props;
               if (!payload) return value;
-
-              if (payload.riskFlags.length) {
-                return [
-                  value,
-                  `${name}
-⚠ ${payload.riskFlags.join(" | ")}`
-                ];
-              }
-              return value;
+              return [
+                formatNumber(value),
+                payload.riskFlags.length
+                  ? `${name}\n⚠ ${payload.riskFlags.join(" | ")}`
+                  : name,
+              ];
             }}
           />
 
@@ -287,8 +291,8 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={barData}>
           <XAxis dataKey="country" />
-          <YAxis />
-          <Tooltip />
+          <YAxis tickFormatter={v => formatNumber(v)} />
+          <Tooltip formatter={v => formatNumber(v)} />
           <Bar dataKey="value">
             {barData.map((d, i) => (
               <Cell
@@ -317,11 +321,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
                 <Geography
                   key={geo.rsmKey}
                   geography={geo}
-                  fill={
-                    val
-                      ? `rgba(234,88,12,${val / maxHeat})`
-                      : "#EEE"
-                  }
+                  fill={val ? `rgba(234,88,12,${val / maxHeat})` : "#EEE"}
                   stroke="#CCC"
                 />
               );
@@ -334,11 +334,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           if (!coords) return null;
           return (
             <Marker key={idx} coordinates={coords}>
-              <circle
-                r={Math.min(Math.sqrt(val) * 2, 18)}
-                fill="orange"
-                opacity={0.7}
-              />
+              <circle r={Math.max(Math.sqrt(val) * 4, 4)} fill="orange" opacity={0.7} />
             </Marker>
           );
         })}
@@ -369,8 +365,8 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
               }}
             >
               <td>{row.Entity || row.Exporter || row.Importer || row.entity}</td>
-              <td>{row["Amount($)"] || row.Amount}</td>
-              <td>{row["Weight(Kg)"] || row.Weight}</td>
+              <td>{formatNumber(row["Amount($)"] || row.Amount)}</td>
+              <td>{formatNumber(row["Weight(Kg)"] || row.Weight)}</td>
               <td>{row.Country}</td>
               <td>{row.riskFlags.join(" | ")}</td>
             </tr>
