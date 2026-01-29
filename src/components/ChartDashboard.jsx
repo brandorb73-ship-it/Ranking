@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -67,6 +67,7 @@ const COUNTRY_COORDS = {
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
   const [showOnlyRisky, setShowOnlyRisky] = useState(false);
+  const [selectedEntity, setSelectedEntity] = useState(null);
 
   /* ---------------- DATA SOURCE ---------------- */
   const data = filteredRows.length ? filteredRows : rows;
@@ -129,6 +130,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         weight: Number(r["Weight(Kg)"] || r.Weight || 0),
         amount: Number(r["Amount($)"] || r.Amount || 0),
         riskFlags: r.riskFlags || [],
+        Entity: r.Entity || r.Exporter || r.Importer || r.entity,
         Country: r.Country,
       }))
       .filter(r => r.weight > 0 && r.amount > 0);
@@ -187,6 +189,13 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     pdf.save("charts.pdf");
   };
 
+  /* ===================== SCROLL TO TABLE ROW ===================== */
+  useEffect(() => {
+    if (!selectedEntity) return;
+    const el = document.getElementById(`row-${selectedEntity}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedEntity]);
+
   /* ===================== RENDER ===================== */
   return (
     <div ref={chartRef} style={{ padding: 20 }}>
@@ -230,7 +239,6 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           <XAxis dataKey="weight" name="Weight (Kg)" />
           <YAxis dataKey="amount" name="Amount ($)" />
 
-          {/* Custom tooltip with flag explanation */}
           <Tooltip
             formatter={(value, name, props) => {
               const { payload } = props;
@@ -249,9 +257,15 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
 
           <Scatter
             data={scatterData}
+            onClick={point => setSelectedEntity(point.Entity)}
             shape={({ cx, cy, payload }) => (
               <g>
-                <circle cx={cx} cy={cy} r={4} fill="#2563eb" />
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={4}
+                  fill={payload.Entity === selectedEntity ? "#ff0000" : "#2563eb"}
+                />
                 {payload.riskFlags.length > 0 && (
                   <circle
                     cx={cx}
@@ -329,6 +343,40 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           );
         })}
       </ComposableMap>
+
+      {/* ===================== TABLE ===================== */}
+      <h3 style={{ marginTop: 30 }}>Entities Table</h3>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th>Entity</th>
+            <th>Amount ($)</th>
+            <th>Weight (Kg)</th>
+            <th>Country</th>
+            <th>Risk Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          {enrichedData.map(row => (
+            <tr
+              id={`row-${row.Entity || row.Exporter || row.Importer || row.entity}`}
+              key={row.Entity || row.Exporter || row.Importer || row.entity}
+              style={{
+                background:
+                  selectedEntity === (row.Entity || row.Exporter || row.Importer || row.entity)
+                    ? "rgba(255,0,0,0.1)"
+                    : "transparent",
+              }}
+            >
+              <td>{row.Entity || row.Exporter || row.Importer || row.entity}</td>
+              <td>{row["Amount($)"] || row.Amount}</td>
+              <td>{row["Weight(Kg)"] || row.Weight}</td>
+              <td>{row.Country}</td>
+              <td>{row.riskFlags.join(" | ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
