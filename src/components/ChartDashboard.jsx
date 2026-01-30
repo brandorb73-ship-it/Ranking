@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -13,7 +13,7 @@ import {
   PieChart,
   Pie,
   Legend,
-  Sankey 
+  Sankey
 } from "recharts";
 import {
   ComposableMap,
@@ -24,17 +24,9 @@ import {
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-
-const geoUrl =
-  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
-
+const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
 // ---------------- HELPERS ----------------
-function getRiskColor(riskScore) {
-  const RISK_COLORS = ["#3f7d3d", "#d97706", "#c2410c"]; // Low, Medium, High
-  return RISK_COLORS[riskScore] || "#8884d8";
-}
-
 function formatNumber(value, decimals = 2) {
   if (value == null) return "-";
   return Number(value).toLocaleString(undefined, {
@@ -54,7 +46,6 @@ function deriveRiskFlags(row, context) {
   const { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap } =
     context;
 
-
   if (amount > p75Amount && weight < p25Weight) flags.push("High value / low weight");
   if (weight > p75Weight && amount < p25Amount) flags.push("High weight / low value");
   if (txn > p75Txn && amount < p25Amount) flags.push("High frequency / low value");
@@ -65,20 +56,6 @@ function getRiskScore(flags) {
   if (!flags || !flags.length) return 0; // Low
   if (flags.length === 1) return 1; // Medium
   return 2; // High
-}
-function explainRisk(flag, row, context) {
-  switch (flag) {
-    case "High value / low weight":
-      return "Declared value is unusually high relative to shipment weight, often seen in mis-declaration or valuation abuse.";
-    case "High weight / low value":
-      return "Large shipment weight with low declared value, common in under-invoicing and dumping scenarios.";
-    case "High frequency / low value":
-      return "Unusually high shipment frequency with low value per transaction, often used to evade thresholds.";
-    case "Country concentration":
-      return "Entity activity is heavily concentrated in a single country, increasing diversion or dependency risk.";
-    default:
-      return "Pattern deviates from peer and historical benchmarks.";
-  }
 }
 
 // ---------------- COUNTRY COORDS ----------------
@@ -108,12 +85,9 @@ const COUNTRY_COORDS = {
   SouthAfrica: [24, -29],
 };
 
-
 // ---------------- MAIN COMPONENT ----------------
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
-
-
   const [showOnlyRisky, setShowOnlyRisky] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [hoveredCountry, setHoveredCountry] = useState(null);
@@ -127,10 +101,8 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   });
   const [pieDimension, setPieDimension] = useState("Risk");
 
-
   const data = filteredRows.length ? filteredRows : rows;
   if (!data || !data.length) return <div style={{ padding: 20 }}>No data available</div>;
-
 
   // ---------------- CONTEXT FOR RISK FLAGS ----------------
   const context = useMemo(() => {
@@ -148,7 +120,6 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     const p75Txn = pct(sorted(txns), smallDataset ? 0.5 : 0.75);
     const p25Txn = pct(sorted(txns), 0.25);
 
-
     const countryCount = {};
     data.forEach(r => { if(r.Country) countryCount[r.Country] = (countryCount[r.Country]||0)+1; });
     const singleCountryMap = {};
@@ -158,14 +129,12 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     return { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap };
   }, [data]);
 
-
   // ---------------- ENRICH DATA ----------------
   const enrichedData = useMemo(() => data.map(r => {
     const riskFlags = deriveRiskFlags(r, context);
     const riskScore = getRiskScore(riskFlags);
     return { ...r, riskFlags, riskScore };
   }), [data, context]);
-
 
   // ---------------- FILTERED DATA ----------------
   const filteredData = useMemo(() => {
@@ -181,44 +150,6 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     });
   }, [enrichedData, filters, showOnlyRisky]);
 
-// ---------------- SELECTED ENTITY ROWS (Risk Explanation Panel) ----------------
-const selectedEntityRows = useMemo(() => {
-  if (!selectedEntity) return [];
-  return filteredData.filter(r =>
-    (r.Entity || r.Exporter || r.Importer || r.entity) === selectedEntity
-  );
-}, [selectedEntity, filteredData]);
-
-// ---------------- ENTITY FINGERPRINT PROFILE ----------------
-const entityFingerprint = useMemo(() => {
-  if (!selectedEntity || !selectedEntityRows.length) return null;
-
-  let totalValue = 0;
-  let totalWeight = 0;
-  let totalTxns = 0;
-  const countries = new Set();
-  let totalFlags = 0;
-
-  selectedEntityRows.forEach(r => {
-    totalValue += Number(r.Amount || r["Amount($)"] || 0);
-    totalWeight += Number(r.Weight || r["Weight(Kg)"] || 0);
-    totalTxns += Number(r.txnCount || r.Txns || 0);
-    if (r.Country) countries.add(r.Country);
-    totalFlags += r.riskFlags.length;
-  });
-
-  return {
-    entity: selectedEntity,
-    totalValue,
-    totalWeight,
-    totalTxns,
-    countryCount: countries.size,
-    avgValuePerTxn: totalValue / (totalTxns || 1),
-    avgWeightPerTxn: totalWeight / (totalTxns || 1),
-    flagDensity: totalFlags / (totalTxns || 1)
-  };
-}, [selectedEntity, selectedEntityRows]);
-
   // ---------------- SCATTER DATA ----------------
   const scatterData = useMemo(() => filteredData.map(r => ({
     weight: Number(r["Weight(Kg)"] || r.Weight || 0),
@@ -230,17 +161,13 @@ const entityFingerprint = useMemo(() => {
     txnCount: r.txnCount || r.Txns || 0,
   })), [filteredData]);
 
-
-  // ---------------- COLOR PALETTES ----------------
   const RISK_COLORS = ["#3f7d3d","#d97706","#c2410c"]; // Muted green, amber, red
   const CHART_COLORS = ["#1e3a8a","#2563eb","#0ea5e9","#64748b","#475569","#64748b"];
-
 
   // ---------------- HOVER & SELECTION HANDLING ----------------
   const handleScatterHover = (point) => setHoveredCountry(point.Country);
   const handleScatterLeave = () => setHoveredCountry(null);
   const handleSelectEntity = (entity) => setSelectedEntity(entity);
-
 
   // ---------------- TOP FLAGGED / OUTLIERS ----------------
   const topFlagged = useMemo(()=>[...filteredData].sort((a,b)=>b.riskFlags.length-a.riskFlags.length).slice(0,5),[filteredData]);
@@ -249,7 +176,6 @@ const entityFingerprint = useMemo(() => {
     const bScore=(Number(b.Amount||b["Amount($)"]||0)+Number(b.Weight||b["Weight(Kg)"]||0))/2;
     return bScore-aScore;
   }).slice(0,5),[filteredData]);
-
 
   // ---------------- PDF EXPORT ----------------
   const exportPDF = async ()=>{
@@ -261,7 +187,6 @@ const entityFingerprint = useMemo(() => {
     pdf.save("charts.pdf");
   };
 
-
   // ---------------- HEATMAP DATA ----------------
   const heatmapData = useMemo(()=>{
     const agg={};
@@ -269,118 +194,6 @@ const entityFingerprint = useMemo(() => {
     return agg;
   },[filteredData]);
   const maxHeat = Math.max(...Object.values(heatmapData),1);
-
-// ---------------- BAR + LINE COMBO DATA ----------------
-const countryComboData = useMemo(() => {
-  const agg = {};
-
-  filteredData.forEach(r => {
-    const country = r.Country || "Unknown";
-    if (!agg[country]) agg[country] = { value: 0, txns: 0 };
-    agg[country].value += Number(r.Amount || r["Amount($)"] || 0);
-    agg[country].txns += Number(r.txnCount || r.Txns || 0);
-  });
-
-  return Object.entries(agg).map(([country, v]) => ({
-    country,
-    value: v.value,
-    txns: v.txns
-  }));
-}, [filteredData]);
-
-// ---------------- SANKEY DATA ----------------
-// ---------------- SANKEY METRIC ----------------
-const sankeyMetricOptions = ["Amount($)", "Weight(Kg)", "Quantity", "Transactions"];
-const [sankeyMetric, setSankeyMetric] = useState("Amount($)");
-
-// Helper: risk-based color
-function getRiskColor(riskScore) {
-  const RISK_COLORS = ["#3f7d3d", "#d97706", "#c2410c"]; // Low, Medium, High
-  return RISK_COLORS[riskScore] || "#8884d8";
-}
-
-// Memoized Sankey data
-const sankeyData = useMemo(() => {
-  if (!filteredData || !filteredData.length) return { nodes: [], links: [] };
-
-  const nodesMap = {};
-  const links = [];
-
-  filteredData.forEach(r => {
-    const entity = r.Entity || r.Exporter || r.Importer || r.entity;
-    const country = r.Country || "Unknown";
-    const riskScore = r.riskScore || 0;
-
-    if (!nodesMap[entity]) nodesMap[entity] = { name: entity, color: getRiskColor(riskScore) };
-    if (!nodesMap[country]) nodesMap[country] = { name: country, color: "#64748b" };
-
-    // Compute value based on metric
-    let value = 0;
-    switch (sankeyMetric) {
-      case "Amount($)": value = Number(r.Amount || r["Amount($)"] || 0); break;
-      case "Weight(Kg)": value = Number(r.Weight || r["Weight(Kg)"] || 0); break;
-      case "Quantity": value = Number(r.Quantity || 0); break;
-      case "Transactions": value = Number(r.txnCount || r.Txns || 0); break;
-    }
-
-    if (value > 0) {
-      links.push({
-        source: entity,
-        target: country,
-        value,
-        color: getRiskColor(riskScore)
-      });
-    }
-  });
-
-  return { nodes: Object.values(nodesMap), links };
-}, [filteredData, sankeyMetric]);
-
-{/* -------- SANKEY DIAGRAM -------- */}
-<div style={{ marginTop: 20 }}>
-  <h3>Entity → Country Flow (Sankey)</h3>
-
-  <select
-    value={sankeyMetric}
-    onChange={e => setSankeyMetric(e.target.value)}
-    style={{ marginBottom: 12 }}
-  >
-    {sankeyMetricOptions.map(opt => (
-      <option key={opt} value={opt}>{opt}</option>
-    ))}
-  </select>
-
-  {sankeyData.nodes.length === 0 ? (
-    <div>No data available for Sankey</div>
-  ) : (
-    <ResponsiveContainer width="100%" height={400}>
-      <Sankey
-        data={sankeyData}
-        nodePadding={15}
-        nodeWidth={15}
-        margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-        link={{ strokeOpacity: 0.6 }}
-      >
-        {/* Nodes */}
-        {sankeyData.nodes.map((node, i) => (
-          <Sankey.Node key={i} node={node} fill={node.color} />
-        ))}
-
-        {/* Links */}
-        {sankeyData.links.map((link, i) => (
-          <Sankey.Link key={i} link={link} stroke={link.color} />
-        ))}
-
-        <Tooltip
-          formatter={(value, name) => [
-            typeof value === "number" ? formatNumber(value) : value,
-            name
-          ]}
-        />
-      </Sankey>
-    </ResponsiveContainer>
-  )}
-</div>
 
   // ---------------- PIE CHART DATA ----------------
   const pieData = useMemo(() => {
@@ -400,10 +213,37 @@ const sankeyData = useMemo(() => {
     });
     return Object.entries(map).map(([name,value])=>({name,value}));
   }, [filteredData,pieDimension]);
-
-
   const COLORS = ["#1f4e79","#2563eb","#0ea5e9","#64748b","#475569","#64748b","#fbbf24","#f87171","#3f7d3d"];
 
+  // ---------------- SANKEY DATA ----------------
+  const sankeyData = useMemo(() => {
+    const nodesMap = {};
+    const links = [];
+
+    filteredData.forEach((r) => {
+      const country = r.Country || "Unknown";
+      const entity = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
+      const risk = ["Low", "Medium", "High"][r.riskScore] || "Low";
+
+      // Nodes
+      nodesMap[country] = nodesMap[country] || { name: country };
+      nodesMap[entity] = nodesMap[entity] || { name: entity };
+      nodesMap[risk] = nodesMap[risk] || { name: risk };
+
+      // Links: Country -> Entity
+      let link = links.find(l => l.source === country && l.target === entity);
+      if(link) link.value += 1;
+      else links.push({ source: country, target: entity, value: 1 });
+
+      // Links: Entity -> Risk
+      link = links.find(l => l.source === entity && l.target === risk);
+      if(link) link.value += 1;
+      else links.push({ source: entity, target: risk, value: 1 });
+    });
+
+    const nodes = Object.values(nodesMap);
+    return { nodes, links };
+  }, [filteredData]);
 
   return (
     <div ref={chartRef} style={{padding:20}}>
@@ -420,7 +260,6 @@ const sankeyData = useMemo(() => {
       </div>
       <label><input type="checkbox" checked={showOnlyRisky} onChange={e=>setShowOnlyRisky(e.target.checked)} style={{marginRight:6}}/>Show only risky entities</label>
 
-
       {/* -------- RISK LEGEND -------- */}
       <div style={{margin:8}}>
         <strong>Risk Legend:</strong>
@@ -428,7 +267,6 @@ const sankeyData = useMemo(() => {
         <span style={{background:RISK_COLORS[1],width:20,height:12,display:"inline-block",marginLeft:8}}/> Medium
         <span style={{background:RISK_COLORS[2],width:20,height:12,display:"inline-block",marginLeft:8}}/> High
       </div>
-
 
       {/* -------- SCATTER CHART -------- */}
       <h3 style={{marginTop:20}}>Weight vs Amount (Risk-Annotated)</h3>
@@ -464,95 +302,6 @@ const sankeyData = useMemo(() => {
         </ScatterChart>
       </ResponsiveContainer>
 
-{selectedEntity && selectedEntityRows.length > 0 && (
-  <div
-    style={{
-      marginTop: 20,
-      padding: 16,
-      border: "1px solid #e5e7eb",
-      borderRadius: 8,
-      background: "#fafafa"
-    }}
-  >
-    <h3 style={{ marginBottom: 8 }}>
-      Risk Explanation — {selectedEntity}
-    </h3>
-
-    <div style={{ marginBottom: 12 }}>
-      <strong>Overall Risk Level:</strong>{" "}
-      {selectedEntityRows[0].riskScore === 2
-        ? "High"
-        : selectedEntityRows[0].riskScore === 1
-        ? "Medium"
-        : "Low"}
-    </div>
-
-    {selectedEntityRows.map((r, idx) => (
-      <div
-        key={idx}
-        style={{
-          marginBottom: 12,
-          padding: 12,
-          borderLeft: "4px solid #dc2626",
-          background: "#fff"
-        }}
-      >
-        <div style={{ fontSize: 13, color: "#374151" }}>
-          Country: <strong>{r.Country || "Unknown"}</strong> ·
-          Amount: <strong>${formatNumber(r.Amount || r["Amount($)"])}</strong> ·
-          Weight: <strong>{formatNumber(r.Weight || r["Weight(Kg)"])} Kg</strong>
-        </div>
-
-        <ul style={{ marginTop: 6, paddingLeft: 18 }}>
-          {r.riskFlags.map((flag, i) => (
-            <li key={i}>
-              <strong>{flag}</strong>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>
-                {explainRisk(flag, r, context)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    ))}
-  </div>
-)}
-
-{entityFingerprint && (
-  <div
-    style={{
-      marginTop: 16,
-      padding: 16,
-      border: "1px solid #e5e7eb",
-      borderRadius: 8,
-      background: "#ffffff"
-    }}
-  >
-    <h3 style={{ marginBottom: 12 }}>
-      Entity Fingerprint — {entityFingerprint.entity}
-    </h3>
-
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-        gap: 12
-      }}
-    >
-      <div><strong>Total Value</strong><br />${formatNumber(entityFingerprint.totalValue)}</div>
-      <div><strong>Total Weight</strong><br />{formatNumber(entityFingerprint.totalWeight)} Kg</div>
-      <div><strong>Total Transactions</strong><br />{formatInteger(entityFingerprint.totalTxns)}</div>
-      <div><strong>Countries Involved</strong><br />{entityFingerprint.countryCount}</div>
-      <div><strong>Avg Value / Txn</strong><br />${formatNumber(entityFingerprint.avgValuePerTxn)}</div>
-      <div><strong>Avg Weight / Txn</strong><br />{formatNumber(entityFingerprint.avgWeightPerTxn)} Kg</div>
-      <div>
-        <strong>Flag Density</strong><br />
-        {entityFingerprint.flagDensity.toFixed(2)} flags / txn
-      </div>
-    </div>
-  </div>
-)}
-
       {/* -------- SUMMARY PANEL -------- */}
       <div style={{display:"flex", gap:40, marginTop:12}}>
         <div>
@@ -569,67 +318,72 @@ const sankeyData = useMemo(() => {
         </div>
       </div>
 
-
       {/* -------- TABLE -------- */}
-      <h3 style={{marginTop:20}}>Data Table</h3>
-      <div style={{maxHeight:300, overflowY:"auto", border:"1px solid #ccc"}}>
-        <table style={{width:"100%", borderCollapse:"collapse"}}>
-          <thead style={{position:"sticky", top:0, background:"#f4f4f4"}}>
-            <tr>
-              <th>Entity</th>
-              <th>Country</th>
-              <th>Amount ($)</th>
-              <th>Weight (Kg)</th>
-              <th>Transactions</th>
-              <th>Risk Flags</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.map(r=>{
-              const isSelected = r.Entity===selectedEntity || hoveredCountry===r.Country;
-              return (
-                <tr key={r.Entity} id={`row-${r.Entity}`}
-                  style={{background:isSelected?"#fde68a":undefined, cursor:"pointer"}}
-                  onClick={()=>handleSelectEntity(r.Entity)}>
-                  <td>{r.Entity||r.Exporter||r.Importer||r.entity}</td>
-                  <td>{r.Country}</td>
-                  <td style={{textAlign:"right"}}>{formatNumber(r.Amount||r["Amount($)"])}</td>
-                  <td style={{textAlign:"right"}}>{formatNumber(r.Weight||r["Weight(Kg)"])}</td>
-                  <td style={{textAlign:"right"}}>{formatInteger(r.txnCount||r.Txns)}</td>
-                  <td>{r.riskFlags.join(" | ")}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
+<h3 style={{ marginTop: 20 }}>Data Table</h3>
+<div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #ccc" }}>
+  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    <thead style={{ position: "sticky", top: 0, background: "#f4f4f4" }}>
+      <tr>
+        <th>Entity</th>
+        <th>Country</th>
+        <th>Amount ($)</th>
+        <th>Weight (Kg)</th>
+        <th>Transactions</th>
+        <th>Risk Flags</th>
+      </tr>
+    </thead>
+    <tbody>
+      {filteredData.map((r) => {
+        const isSelected = r.Entity === selectedEntity || hoveredCountry === r.Country;
+        return (
+          <tr
+            key={r.Entity || r.Exporter || r.Importer || r.entity}
+            style={{ background: isSelected ? "#fde68a" : undefined, cursor: "pointer" }}
+            onClick={() => handleSelectEntity(r.Entity)}
+          >
+            <td>{r.Entity || r.Exporter || r.Importer || r.entity}</td>
+            <td>{r.Country}</td>
+            <td style={{ textAlign: "right" }}>
+              {formatNumber(r.Amount ?? r["Amount($)"] ?? 0)}
+            </td>
+            <td style={{ textAlign: "right" }}>
+              {formatNumber(r.Weight ?? r["Weight(Kg)"] ?? 0)}
+            </td>
+            <td style={{ textAlign: "right" }}>
+              {formatInteger(r.txnCount ?? r.Txns ?? 0)}
+            </td>
+            <td>{r.riskFlags.join(" | ")}</td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+</div>
 
       {/* -------- BAR + COMBO CHART -------- */}
       <h3 style={{marginTop:20}}>Country Value vs Transactions</h3>
       <ResponsiveContainer width="100%" height={300}>
-  <BarChart
-    data={Object.entries(
-      filteredData.reduce((agg, r) => {
-        const c = r.Country || "Unknown";
-        if (!agg[c]) agg[c] = { value: 0, txns: 0 };
-        agg[c].value += Number(r.Amount || r["Amount($)"] || 0);
-        agg[c].txns += Number(r.txnCount || r.Txns || 0);
-        return agg;
-      }, {})
-    ).map(([country, v]) => ({ country, value: v.value, txns: v.txns }))}
-    margin={{ top: 20, right: 20, bottom: 20, left: 60 }}
-  >
-    <XAxis dataKey="country" />
-    <YAxis yAxisId="left" orientation="left" tickFormatter={formatNumber} />
-    <YAxis yAxisId="right" orientation="right" tickFormatter={formatInteger} />
-    <Tooltip formatter={(v) => (typeof v === "number" ? formatNumber(v) : v)} />
-    <Legend />
-    <Bar yAxisId="left" dataKey="value" fill={CHART_COLORS[0]} />
-    <Line yAxisId="right" dataKey="txns" stroke={CHART_COLORS[1]} strokeWidth={2} />
-  </BarChart>
-</ResponsiveContainer>
-
+        <BarChart
+          data={Object.entries(
+            filteredData.reduce((agg, r) => {
+              const c = r.Country || "Unknown";
+              if (!agg[c]) agg[c] = { value: 0, txns: 0 };
+              agg[c].value += Number(r.Amount || r["Amount($)"] || 0);
+              agg[c].txns += Number(r.txnCount || r.Txns || 0);
+              return agg;
+            }, {})
+          ).map(([country, v]) => ({ country, value: v.value, txns: v.txns }))}
+          margin={{ top: 20, right: 20, bottom: 20, left: 60 }}
+        >
+          <XAxis dataKey="country" />
+          <YAxis yAxisId="left" orientation="left" tickFormatter={formatNumber} />
+          <YAxis yAxisId="right" orientation="right" tickFormatter={formatInteger} />
+          <Tooltip formatter={(v) => (typeof v === "number" ? formatNumber(v) : v)} />
+          <Legend />
+          <Bar yAxisId="left" dataKey="value" fill={CHART_COLORS[0]} />
+          <Line yAxisId="right" dataKey="txns" stroke={CHART_COLORS[1]} strokeWidth={2} />
+        </BarChart>
+      </ResponsiveContainer>
 
       {/* -------- PIE CHART -------- */}
       <h3 style={{marginTop:20}}>Pie Chart - {pieDimension}</h3>
@@ -652,14 +406,72 @@ const sankeyData = useMemo(() => {
             outerRadius={100}
             label={({name,value})=>`${name}: ${value}`}
           >
-            {pieData.map((_,index)=>(
-              <Cell key={index} fill={COLORS[index % COLORS.length]}/>
-            ))}
+            {pieData.map((_,index)=>(<Cell key={index} fill={COLORS[index % COLORS.length]}/>))}
           </Pie>
           <Legend />
         </PieChart>
       </ResponsiveContainer>
 
+{/* -------- SANKEY DIAGRAM -------- */}
+<h3 style={{ marginTop: 30 }}>Country → Entity → Risk Flow</h3>
+
+{filteredData.length > 0 ? (() => {
+  // ----- Prepare Sankey nodes and links -----
+  const nodes = [];
+  const links = [];
+  const nodeMap = {};
+
+  filteredData.forEach((r) => {
+    const country = r.Country || "Unknown";
+    const entity = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
+    const risk = ["Low", "Medium", "High"][r.riskScore] || "Unknown";
+
+    [country, entity, risk].forEach((name) => {
+      if (!nodeMap[name]) {
+        nodeMap[name] = { name };
+        nodes.push(nodeMap[name]);
+      }
+    });
+
+    links.push({ source: country, target: entity, value: 1, risk: r.riskScore });
+    links.push({ source: entity, target: risk, value: 1, risk: r.riskScore });
+  });
+
+  const sankeyData = { nodes, links };
+  const RISK_COLORS = ["#3f7d3d", "#d97706", "#c2410c"]; // Low, Medium, High
+
+  return (
+    <ResponsiveContainer width="100%" height={400}>
+      <Sankey
+        data={sankeyData}
+        node={{ nodePadding: 20, width: 15, stroke: "#888" }}
+        link={{ strokeOpacity: 0.7 }}
+        margin={{ top: 20, bottom: 20, left: 20, right: 20 }}
+      >
+        <Tooltip
+          formatter={(value, name, props) => {
+            const risk = props.payload.risk ?? 0;
+            const riskLabel = ["Low", "Medium", "High"][risk] || "Unknown";
+            return [`${value}`, `${props.source} → ${props.target} (${riskLabel})`];
+          }}
+        />
+        {/* Node colors */}
+        {sankeyData.nodes.map((node, idx) => (
+          <Cell key={`node-${idx}`} fill="#2563eb" />
+        ))}
+        {/* Link colors */}
+        {sankeyData.links.map((link, idx) => {
+          const color = RISK_COLORS[link.risk ?? 0];
+          return <Cell key={`link-${idx}`} fill={color} />;
+        })}
+      </Sankey>
+    </ResponsiveContainer>
+  );
+})() : (
+  <div style={{ padding: 50, textAlign: "center", color: "#888" }}>
+    No Sankey data available
+  </div>
+)}
 
       {/* -------- HEATMAP -------- */}
       <h3 style={{marginTop:30}}>Country Transaction Intensity Heatmap</h3>
@@ -680,7 +492,6 @@ const sankeyData = useMemo(() => {
             })
           }
         </Geographies>
-
 
         {Object.entries(heatmapData).map(([country, val], idx) => {
           const coords = COUNTRY_COORDS[country];
