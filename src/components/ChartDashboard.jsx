@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -8,320 +8,309 @@ import {
   Tooltip,
   BarChart,
   Bar,
+  Line,
   Cell,
   PieChart,
   Pie,
-  Legend,
-  LineChart,
-  Line,
+  Legend
 } from "recharts";
-
 import {
   ComposableMap,
   Geographies,
   Geography,
   Marker,
 } from "react-simple-maps";
-
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-/* ===================== CONSTANTS ===================== */
 
 const geoUrl =
   "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
-/* -------- PROFESSIONAL COLOR PALETTE -------- */
-const COLORS = {
-  low: "#4b6f44",        // muted green
-  medium: "#b0892f",     // amber
-  high: "#8b3a2e",       // dark rust
-  neutral: "#4b6b9a",    // muted blue
-  bar: "#5b7c99",
-  line: "#8b5e34",
-};
 
-/* -------- COUNTRY COORDS (EXTENDED SAFE SET) -------- */
+// ---------------- HELPERS ----------------
+function formatNumber(value, decimals = 2) {
+  if (value == null) return "-";
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+function formatInteger(value) {
+  if (value == null) return "-";
+  return Math.round(value).toLocaleString();
+}
+function deriveRiskFlags(row, context) {
+  const flags = [];
+  const amount = Number(row["Amount($)"] || row.Amount || 0);
+  const weight = Number(row["Weight(Kg)"] || row.Weight || 0);
+  const txn = Number(row.txnCount || row.Txns || 0);
+  const { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap } =
+    context;
+
+
+  if (amount > p75Amount && weight < p25Weight) flags.push("High value / low weight");
+  if (weight > p75Weight && amount < p25Amount) flags.push("High weight / low value");
+  if (txn > p75Txn && amount < p25Amount) flags.push("High frequency / low value");
+  if (row.Country && singleCountryMap[row.Country]) flags.push("Country concentration");
+  return flags;
+}
+function getRiskScore(flags) {
+  if (!flags || !flags.length) return 0; // Low
+  if (flags.length === 1) return 1; // Medium
+  return 2; // High
+}
+function explainRisk(flag, row, context) {
+  switch (flag) {
+    case "High value / low weight":
+      return "Declared value is unusually high relative to shipment weight, often seen in mis-declaration or valuation abuse.";
+    case "High weight / low value":
+      return "Large shipment weight with low declared value, common in under-invoicing and dumping scenarios.";
+    case "High frequency / low value":
+      return "Unusually high shipment frequency with low value per transaction, often used to evade thresholds.";
+    case "Country concentration":
+      return "Entity activity is heavily concentrated in a single country, increasing diversion or dependency risk.";
+    default:
+      return "Pattern deviates from peer and historical benchmarks.";
+  }
+}
+
+// ---------------- COUNTRY COORDS ----------------
 const COUNTRY_COORDS = {
   "United States": [-98, 38],
   China: [104, 35],
-  Singapore: [103.8, 1.35],
   India: [78, 21],
-  Japan: [138, 37],
+  Brazil: [-51, -10],
+  Russia: [105, 60],
   Germany: [10, 51],
   France: [2, 46],
   "United Kingdom": [0, 54],
-  Netherlands: [5.3, 52],
-  Belgium: [4.5, 50.8],
-  Italy: [12.5, 42.5],
-  Spain: [-3.7, 40.4],
+  Japan: [138, 37],
   Australia: [134, -25],
-  Brazil: [-51, -10],
-  Mexico: [-102, 23],
+  Singapore: [103.8, 1.35],
   Canada: [-106, 56],
-  Vietnam: [108, 14],
-  Thailand: [101, 15],
-  Malaysia: [102, 4],
-  Indonesia: [113, -2],
-  SouthKorea: [127.8, 36.5],
+  Mexico: [-102, 23],
+  Italy: [12.5, 42.5],
+  Spain: [-3, 40],
+  Netherlands: [5.3, 52.1],
+  Belgium: [4.5, 50.8],
+  SouthKorea: [127.5, 36],
+  Turkey: [35, 39],
+  SaudiArabia: [45, 25],
+  UAE: [53, 24],
+  Argentina: [-64, -34],
+  SouthAfrica: [24, -29],
 };
 
-/* ===================== FORMATTERS ===================== */
 
-const formatNumber = (v) =>
-  typeof v === "number"
-    ? v.toLocaleString(undefined, { maximumFractionDigits: 2 })
-    : v;
-
-const formatInteger = (v) =>
-  typeof v === "number"
-    ? v.toLocaleString(undefined, { maximumFractionDigits: 0 })
-    : v;
-
-/* ===================== RISK ENGINE ===================== */
-
-function computeRiskScore(row, stats) {
-  let score = 0;
-
-  if (row.amount > stats.p90Amount) score += 3;
-  if (row.weight > stats.p90Weight) score += 2;
-  if (row.txnCount < stats.p20Txn) score += 2;
-  if (row.countryCount === 1) score += 1;
-
-  return Math.min(score, 10);
-}
-
-function riskBand(score) {
-  if (score >= 7) return "high";
-  if (score >= 4) return "medium";
-  return "low";
-}
-
-/* ===================== COMPONENT ===================== */
-
+// ---------------- MAIN COMPONENT ----------------
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
 
+
+  const [showOnlyRisky, setShowOnlyRisky] = useState(false);
+  const [selectedEntity, setSelectedEntity] = useState(null);
+  const [hoveredCountry, setHoveredCountry] = useState(null);
+  const [filters, setFilters] = useState({
+    minValue: 0,
+    maxValue: Infinity,
+    minWeight: 0,
+    maxWeight: Infinity,
+    minTxns: 0,
+    maxTxns: Infinity,
+  });
+  const [pieDimension, setPieDimension] = useState("Risk");
+
+
   const data = filteredRows.length ? filteredRows : rows;
+  if (!data || !data.length) return <div style={{ padding: 20 }}>No data available</div>;
 
-  /* ===================== STATE ===================== */
 
-  const [valueRange, setValueRange] = useState([0, Infinity]);
-  const [weightRange, setWeightRange] = useState([0, Infinity]);
-  const [txnRange, setTxnRange] = useState([0, Infinity]);
+  // ---------------- CONTEXT FOR RISK FLAGS ----------------
+  const context = useMemo(() => {
+    const amounts = data.map(r => Number(r["Amount($)"] || r.Amount || 0));
+    const weights = data.map(r => Number(r["Weight(Kg)"] || r.Weight || 0));
+    const txns = data.map(r => Number(r.txnCount || r.Txns || 0));
+    const sorted = arr => [...arr].sort((a, b) => a - b);
+    const pct = (arr, p) => arr[Math.floor(arr.length * p)] || 0;
+    const n = data.length;
+    const smallDataset = n < 100;
+    const p75Amount = pct(sorted(amounts), smallDataset ? 0.5 : 0.75);
+    const p25Amount = pct(sorted(amounts), 0.25);
+    const p75Weight = pct(sorted(weights), smallDataset ? 0.5 : 0.75);
+    const p25Weight = pct(sorted(weights), 0.25);
+    const p75Txn = pct(sorted(txns), smallDataset ? 0.5 : 0.75);
+    const p25Txn = pct(sorted(txns), 0.25);
 
-  const [hoverCountry, setHoverCountry] = useState(null);
-  const [pieDimension, setPieDimension] = useState("Country");
 
-  /* ===================== STATS ===================== */
-
-  const stats = useMemo(() => {
-    const amounts = data.map((d) => Number(d.Amount || 0)).sort((a, b) => a - b);
-    const weights = data.map((d) => Number(d.Weight || 0)).sort((a, b) => a - b);
-    const txns = data.map((d) => Number(d.txnCount || 1)).sort((a, b) => a - b);
-
-    const p = (arr, q) => arr[Math.floor(arr.length * q)] || 0;
-
-    return {
-      p90Amount: p(amounts, 0.9),
-      p90Weight: p(weights, 0.9),
-      p20Txn: p(txns, 0.2),
-    };
+    const countryCount = {};
+    data.forEach(r => { if(r.Country) countryCount[r.Country] = (countryCount[r.Country]||0)+1; });
+    const singleCountryMap = {};
+    Object.keys(countryCount).forEach(c => {
+      if (countryCount[c]/n > (smallDataset ? 0.5 : 0.8)) singleCountryMap[c] = true;
+    });
+    return { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap };
   }, [data]);
 
-  /* ===================== SCATTER DATA ===================== */
 
-  const scatterData = useMemo(() => {
-    return data
-      .map((r) => {
-        const amount = Number(r.Amount || 0);
-        const weight = Number(r.Weight || 0);
-        const txnCount = Number(r.txnCount || 1);
-        const country = r.Country || "Unknown";
+  // ---------------- ENRICH DATA ----------------
+  const enrichedData = useMemo(() => data.map(r => {
+    const riskFlags = deriveRiskFlags(r, context);
+    const riskScore = getRiskScore(riskFlags);
+    return { ...r, riskFlags, riskScore };
+  }), [data, context]);
 
-        const riskScore = computeRiskScore(
-          {
-            amount,
-            weight,
-            txnCount,
-            countryCount: r.countryCount || 1,
-          },
-          stats
-        );
 
-        return {
-          entity: r.Entity,
-          amount: Number(amount.toFixed(2)),
-          weight: Number(weight.toFixed(2)),
-          txnCount,
-          country,
-          riskScore,
-          riskBand: riskBand(riskScore),
-        };
-      })
-      .filter(
-        (d) =>
-          d.amount >= valueRange[0] &&
-          d.amount <= valueRange[1] &&
-          d.weight >= weightRange[0] &&
-          d.weight <= weightRange[1] &&
-          d.txnCount >= txnRange[0] &&
-          d.txnCount <= txnRange[1]
-      );
-  }, [data, stats, valueRange, weightRange, txnRange]);
-
-  /* ===================== BAR DATA ===================== */
-
-  const barData = useMemo(() => {
-    const agg = {};
-    data.forEach((r) => {
-      const c = r.Country || "Unknown";
-      agg[c] = (agg[c] || 0) + Number(r.Amount || 0);
+  // ---------------- FILTERED DATA ----------------
+  const filteredData = useMemo(() => {
+    return enrichedData.filter(r => {
+      const amt = Number(r["Amount($)"] || r.Amount || 0);
+      const wt = Number(r["Weight(Kg)"] || r.Weight || 0);
+      const txn = Number(r.txnCount || r.Txns || 0);
+      if (amt < filters.minValue || amt > filters.maxValue) return false;
+      if (wt < filters.minWeight || wt > filters.maxWeight) return false;
+      if (txn < filters.minTxns || txn > filters.maxTxns) return false;
+      if (showOnlyRisky && (!r.riskFlags || r.riskFlags.length === 0)) return false;
+      return true;
     });
-    return Object.entries(agg).map(([k, v]) => ({
-      country: k,
-      value: Number(v.toFixed(2)),
-    }));
-  }, [data]);
+  }, [enrichedData, filters, showOnlyRisky]);
 
-  /* ===================== COMBO DATA ===================== */
+// ---------------- SELECTED ENTITY ROWS (Risk Explanation Panel) ----------------
+const selectedEntityRows = useMemo(() => {
+  if (!selectedEntity) return [];
+  return filteredData.filter(r =>
+    (r.Entity || r.Exporter || r.Importer || r.entity) === selectedEntity
+  );
+}, [selectedEntity, filteredData]);
 
-  const comboData = useMemo(() => {
-    const agg = {};
-    data.forEach((r) => {
-      const c = r.Country || "Unknown";
-      if (!agg[c]) agg[c] = { country: c, value: 0, txn: 0 };
-      agg[c].value += Number(r.Amount || 0);
-      agg[c].txn += Number(r.txnCount || 1);
-    });
-    return Object.values(agg).map((d) => ({
-      ...d,
-      value: Number(d.value.toFixed(2)),
-    }));
-  }, [data]);
+  // ---------------- SCATTER DATA ----------------
+  const scatterData = useMemo(() => filteredData.map(r => ({
+    weight: Number(r["Weight(Kg)"] || r.Weight || 0),
+    amount: Number(r["Amount($)"] || r.Amount || 0),
+    riskFlags: r.riskFlags,
+    riskScore: r.riskScore,
+    Entity: r.Entity || r.Exporter || r.Importer || r.entity,
+    Country: r.Country,
+    txnCount: r.txnCount || r.Txns || 0,
+  })), [filteredData]);
 
-  /* ===================== PIE DATA ===================== */
 
-  const pieData = useMemo(() => {
-    const agg = {};
-    data.forEach((r) => {
-      const key = r[pieDimension] || "Unknown";
-      agg[key] = (agg[key] || 0) + Number(r.Amount || 0);
-    });
-    return Object.entries(agg).map(([k, v]) => ({
-      name: k,
-      value: Number(v.toFixed(2)),
-    }));
-  }, [data, pieDimension]);
+  // ---------------- COLOR PALETTES ----------------
+  const RISK_COLORS = ["#3f7d3d","#d97706","#c2410c"]; // Muted green, amber, red
+  const CHART_COLORS = ["#1e3a8a","#2563eb","#0ea5e9","#64748b","#475569","#64748b"];
 
-  /* ===================== EXPORT ===================== */
 
-  const exportPDF = async () => {
-    if (!chartRef.current) return;
-    const canvas = await html2canvas(chartRef.current, { scale: 2 });
-    const img = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
-    pdf.addImage(img, "PNG", 10, 10, 190, 0);
+  // ---------------- HOVER & SELECTION HANDLING ----------------
+  const handleScatterHover = (point) => setHoveredCountry(point.Country);
+  const handleScatterLeave = () => setHoveredCountry(null);
+  const handleSelectEntity = (entity) => setSelectedEntity(entity);
+
+
+  // ---------------- TOP FLAGGED / OUTLIERS ----------------
+  const topFlagged = useMemo(()=>[...filteredData].sort((a,b)=>b.riskFlags.length-a.riskFlags.length).slice(0,5),[filteredData]);
+  const topOutliers = useMemo(()=>[...filteredData].sort((a,b)=>{
+    const aScore=(Number(a.Amount||a["Amount($)"]||0)+Number(a.Weight||a["Weight(Kg)"]||0))/2;
+    const bScore=(Number(b.Amount||b["Amount($)"]||0)+Number(b.Weight||b["Weight(Kg)"]||0))/2;
+    return bScore-aScore;
+  }).slice(0,5),[filteredData]);
+
+
+  // ---------------- PDF EXPORT ----------------
+  const exportPDF = async ()=>{
+    if(!chartRef.current) return;
+    const canvas=await html2canvas(chartRef.current,{scale:2});
+    const img=canvas.toDataURL("image/png");
+    const pdf=new jsPDF("p","mm","a4");
+    pdf.addImage(img,"PNG",10,10,190,0);
     pdf.save("charts.pdf");
   };
-  /* ===================== RENDER ===================== */
+
+
+  // ---------------- HEATMAP DATA ----------------
+  const heatmapData = useMemo(()=>{
+    const agg={};
+    filteredData.forEach(r=>{ if(r.Country&&COUNTRY_COORDS[r.Country]) agg[r.Country]=(agg[r.Country]||0)+1; });
+    return agg;
+  },[filteredData]);
+  const maxHeat = Math.max(...Object.values(heatmapData),1);
+
+
+  // ---------------- PIE CHART DATA ----------------
+  const pieData = useMemo(() => {
+    const map = {};
+    filteredData.forEach(r => {
+      let key;
+      switch(pieDimension){
+        case "Risk": key = r.riskScore; break;
+        case "Country": key = r.Country||"Unknown"; break;
+        case "Amount": key = Math.round(r.Amount||r["Amount($)"]||0); break;
+        case "Weight": key = Math.round(r.Weight||r["Weight(Kg)"]||0); break;
+        case "Transactions": key = r.txnCount||r.Txns||0; break;
+        case "Entity": key = r.Entity||r.Exporter||r.Importer||r.entity; break;
+        default: key="Other";
+      }
+      map[key] = (map[key]||0)+1;
+    });
+    return Object.entries(map).map(([name,value])=>({name,value}));
+  }, [filteredData,pieDimension]);
+
+
+  const COLORS = ["#1f4e79","#2563eb","#0ea5e9","#64748b","#475569","#64748b","#fbbf24","#f87171","#3f7d3d"];
+
 
   return (
-    <div ref={chartRef} style={{ padding: 20 }}>
-      {/* ---------- ACTIONS ---------- */}
-      <div style={{ marginBottom: 16 }}>
-        <button className="btn secondary" onClick={exportPDF}>
-          Export PDF
-        </button>
+    <div ref={chartRef} style={{padding:20}}>
+      {/* -------- ACTIONS -------- */}
+      <div style={{marginBottom:12}}>
+        <button className="btn secondary" onClick={exportPDF}>Export PDF</button>
       </div>
 
-      {/* ===================== SLIDERS ===================== */}
-      <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
-        <label>
-          Amount
-          <input
-            type="range"
-            min={0}
-            max={stats.p90Amount || 1}
-            step={stats.p90Amount / 50 || 1}
-            onChange={(e) =>
-              setValueRange([0, Number(e.target.value)])
-            }
-          />
-        </label>
 
-        <label>
-          Weight
-          <input
-            type="range"
-            min={0}
-            max={stats.p90Weight || 1}
-            step={stats.p90Weight / 50 || 1}
-            onChange={(e) =>
-              setWeightRange([0, Number(e.target.value)])
-            }
-          />
-        </label>
+      {/* -------- FILTERS -------- */}
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+        <div>Amount: <input type="range" min={0} max={Math.max(...enrichedData.map(d=>Number(d.Amount||d["Amount($)"]||0)))} value={filters.minValue} onChange={e=>setFilters(f=>({...f,minValue:Number(e.target.value)}))}/> {formatNumber(filters.minValue)}</div>
+        <div>Weight: <input type="range" min={0} max={Math.max(...enrichedData.map(d=>Number(d.Weight||d["Weight(Kg)"]||0)))} value={filters.minWeight} onChange={e=>setFilters(f=>({...f,minWeight:Number(e.target.value)}))}/> {formatNumber(filters.minWeight)}</div>
+        <div>Transactions: <input type="range" min={0} max={Math.max(...enrichedData.map(d=>Number(d.txnCount||d.Txns||0)))} value={filters.minTxns} onChange={e=>setFilters(f=>({...f,minTxns:Number(e.target.value)}))}/> {formatInteger(filters.minTxns)}</div>
+      </div>
+      <label><input type="checkbox" checked={showOnlyRisky} onChange={e=>setShowOnlyRisky(e.target.checked)} style={{marginRight:6}}/>Show only risky entities</label>
 
-        <label>
-          Transactions
-          <input
-            type="range"
-            min={0}
-            max={stats.p20Txn * 5 || 10}
-            step={1}
-            onChange={(e) =>
-              setTxnRange([0, Number(e.target.value)])
-            }
-          />
-        </label>
+
+      {/* -------- RISK LEGEND -------- */}
+      <div style={{margin:8}}>
+        <strong>Risk Legend:</strong>
+        <span style={{background:RISK_COLORS[0],width:20,height:12,display:"inline-block",marginLeft:8}}/> Low
+        <span style={{background:RISK_COLORS[1],width:20,height:12,display:"inline-block",marginLeft:8}}/> Medium
+        <span style={{background:RISK_COLORS[2],width:20,height:12,display:"inline-block",marginLeft:8}}/> High
       </div>
 
-      {/* ===================== RISK LEGEND ===================== */}
-      <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
-        <span style={{ color: COLORS.low }}>● Low Risk</span>
-        <span style={{ color: COLORS.medium }}>● Medium Risk</span>
-        <span style={{ color: COLORS.high }}>● High Risk</span>
-      </div>
 
-      {/* ===================== SCATTER ===================== */}
-      <h3>Weight vs Amount (Risk Highlighted)</h3>
-      <ResponsiveContainer width="100%" height={320}>
-        <ScatterChart>
-          <XAxis dataKey="weight" tickFormatter={formatNumber} />
-          <YAxis dataKey="amount" tickFormatter={formatNumber} />
-          <Tooltip
-            formatter={(v) => formatNumber(v)}
-            labelFormatter={(l) => `Weight: ${formatNumber(l)}`}
-          />
+      {/* -------- SCATTER CHART -------- */}
+      <h3 style={{marginTop:20}}>Weight vs Amount (Risk-Annotated)</h3>
+      <ResponsiveContainer width="100%" height={300}>
+        <ScatterChart margin={{top:20,right:20,bottom:20,left:60}}>
+          <XAxis dataKey="weight" name="Weight (Kg)" tickFormatter={formatNumber}/>
+          <YAxis dataKey="amount" name="Amount ($)" tickFormatter={formatNumber}/>
+          <Tooltip formatter={(value,name,props)=>{
+            const {payload}=props;
+            if(!payload) return value;
+            return [formatNumber(value), payload.riskFlags.length ? `⚠ ${payload.riskFlags.join(" | ")}` : name];
+          }}/>
           <Scatter
             data={scatterData}
-            shape={({ cx, cy, payload }) => (
-              <g
-                onMouseEnter={() => setHoverCountry(payload.country)}
-                onMouseLeave={() => setHoverCountry(null)}
-              >
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={4}
-                  fill={COLORS[payload.riskBand]}
-                  opacity={
-                    hoverCountry &&
-                    hoverCountry !== payload.country
-                      ? 0.2
-                      : 0.9
-                  }
+            onClick={point=>handleSelectEntity(point.Entity)}
+            shape={({cx,cy,payload})=>(
+              <g>
+                <circle cx={cx} cy={cy} r={4}
+                  fill={payload.Entity===selectedEntity?"#ff4d6d":
+                        payload.riskScore===2?RISK_COLORS[2]:
+                        payload.riskScore===1?RISK_COLORS[1]:RISK_COLORS[0]}
+                  stroke={hoveredCountry===payload.Country?"#000":"none"}
+                  strokeWidth={hoveredCountry===payload.Country?2:0}
+                  onMouseEnter={()=>handleScatterHover(payload)}
+                  onMouseLeave={handleScatterLeave}
                 />
-                {payload.riskBand !== "low" && (
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={9}
-                    fill="none"
-                    stroke={COLORS[payload.riskBand]}
-                    strokeDasharray="3,2"
-                  />
+                {payload.riskFlags.length>0 && (
+                  <circle cx={cx} cy={cy} r={8} fill="none" stroke="#111" strokeDasharray="3,2"/>
                 )}
               </g>
             )}
@@ -329,95 +318,181 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         </ScatterChart>
       </ResponsiveContainer>
 
-      {/* ===================== BAR ===================== */}
-      <h3 style={{ marginTop: 30 }}>Transaction Value by Country</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={barData}>
-          <XAxis dataKey="country" />
-          <YAxis tickFormatter={formatNumber} />
-          <Tooltip formatter={(v) => formatNumber(v)} />
-          <Bar dataKey="value">
-            {barData.map((_, i) => (
-              <Cell key={i} fill={COLORS.bar} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+{selectedEntity && selectedEntityRows.length > 0 && (
+  <div
+    style={{
+      marginTop: 20,
+      padding: 16,
+      border: "1px solid #e5e7eb",
+      borderRadius: 8,
+      background: "#fafafa"
+    }}
+  >
+    <h3 style={{ marginBottom: 8 }}>
+      Risk Explanation — {selectedEntity}
+    </h3>
 
-      {/* ===================== COMBO ===================== */}
-      <h3 style={{ marginTop: 30 }}>Value vs Transactions (Combo)</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={comboData}>
-          <XAxis dataKey="country" />
-          <YAxis
-            yAxisId="left"
-            orientation="left"
-            tickFormatter={formatNumber}
-          />
-          <YAxis
-            yAxisId="right"
-            orientation="right"
-            tickFormatter={formatInteger}
-          />
-          <Tooltip />
-          <Legend />
-          <Bar
-            yAxisId="left"
-            dataKey="value"
-            fill={COLORS.bar}
-            name="Value"
-          />
-          <Line
-            yAxisId="right"
-            dataKey="txn"
-            stroke={COLORS.line}
-            name="Transactions"
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div style={{ marginBottom: 12 }}>
+      <strong>Overall Risk Level:</strong>{" "}
+      {selectedEntityRows[0].riskScore === 2
+        ? "High"
+        : selectedEntityRows[0].riskScore === 1
+        ? "Medium"
+        : "Low"}
+    </div>
 
-      {/* ===================== PIE ===================== */}
-      <h3 style={{ marginTop: 30 }}>Distribution (Dynamic)</h3>
-      <select
-        value={pieDimension}
-        onChange={(e) => setPieDimension(e.target.value)}
+    {selectedEntityRows.map((r, idx) => (
+      <div
+        key={idx}
+        style={{
+          marginBottom: 12,
+          padding: 12,
+          borderLeft: "4px solid #dc2626",
+          background: "#fff"
+        }}
       >
+        <div style={{ fontSize: 13, color: "#374151" }}>
+          Country: <strong>{r.Country || "Unknown"}</strong> ·
+          Amount: <strong>${formatNumber(r.Amount || r["Amount($)"])}</strong> ·
+          Weight: <strong>{formatNumber(r.Weight || r["Weight(Kg)"])} Kg</strong>
+        </div>
+
+        <ul style={{ marginTop: 6, paddingLeft: 18 }}>
+          {r.riskFlags.map((flag, i) => (
+            <li key={i}>
+              <strong>{flag}</strong>
+              <div style={{ fontSize: 13, color: "#6b7280" }}>
+                {explainRisk(flag, r, context)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))}
+  </div>
+)}
+
+      {/* -------- SUMMARY PANEL -------- */}
+      <div style={{display:"flex", gap:40, marginTop:12}}>
+        <div>
+          <strong>Top Risk Entities:</strong>
+          <ol>
+            {topFlagged.map(r=><li key={r.Entity||r.Exporter||r.Importer||r.entity}>{r.Entity||r.Exporter||r.Importer||r.entity} ({r.riskFlags.length} flags)</li>)}
+          </ol>
+        </div>
+        <div>
+          <strong>Top Outliers:</strong>
+          <ol>
+            {topOutliers.map(r=><li key={r.Entity||r.Exporter||r.Importer||r.entity}>{r.Entity||r.Exporter||r.Importer||r.entity} (${formatNumber(r.Amount||r["Amount($)"])}, {formatNumber(r.Weight||r["Weight(Kg)"])} Kg)</li>)}
+          </ol>
+        </div>
+      </div>
+
+
+      {/* -------- TABLE -------- */}
+      <h3 style={{marginTop:20}}>Data Table</h3>
+      <div style={{maxHeight:300, overflowY:"auto", border:"1px solid #ccc"}}>
+        <table style={{width:"100%", borderCollapse:"collapse"}}>
+          <thead style={{position:"sticky", top:0, background:"#f4f4f4"}}>
+            <tr>
+              <th>Entity</th>
+              <th>Country</th>
+              <th>Amount ($)</th>
+              <th>Weight (Kg)</th>
+              <th>Transactions</th>
+              <th>Risk Flags</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredData.map(r=>{
+              const isSelected = r.Entity===selectedEntity || hoveredCountry===r.Country;
+              return (
+                <tr key={r.Entity} id={`row-${r.Entity}`}
+                  style={{background:isSelected?"#fde68a":undefined, cursor:"pointer"}}
+                  onClick={()=>handleSelectEntity(r.Entity)}>
+                  <td>{r.Entity||r.Exporter||r.Importer||r.entity}</td>
+                  <td>{r.Country}</td>
+                  <td style={{textAlign:"right"}}>{formatNumber(r.Amount||r["Amount($)"])}</td>
+                  <td style={{textAlign:"right"}}>{formatNumber(r.Weight||r["Weight(Kg)"])}</td>
+                  <td style={{textAlign:"right"}}>{formatInteger(r.txnCount||r.Txns)}</td>
+                  <td>{r.riskFlags.join(" | ")}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+
+      {/* -------- BAR + COMBO CHART -------- */}
+      <h3 style={{marginTop:20}}>Country Value vs Transactions</h3>
+      <ResponsiveContainer width="100%" height={300}>
+  <BarChart
+    data={Object.entries(
+      filteredData.reduce((agg, r) => {
+        const c = r.Country || "Unknown";
+        if (!agg[c]) agg[c] = { value: 0, txns: 0 };
+        agg[c].value += Number(r.Amount || r["Amount($)"] || 0);
+        agg[c].txns += Number(r.txnCount || r.Txns || 0);
+        return agg;
+      }, {})
+    ).map(([country, v]) => ({ country, value: v.value, txns: v.txns }))}
+    margin={{ top: 20, right: 20, bottom: 20, left: 60 }}
+  >
+    <XAxis dataKey="country" />
+    <YAxis yAxisId="left" orientation="left" tickFormatter={formatNumber} />
+    <YAxis yAxisId="right" orientation="right" tickFormatter={formatInteger} />
+    <Tooltip formatter={(v) => (typeof v === "number" ? formatNumber(v) : v)} />
+    <Legend />
+    <Bar yAxisId="left" dataKey="value" fill={CHART_COLORS[0]} />
+    <Line yAxisId="right" dataKey="txns" stroke={CHART_COLORS[1]} strokeWidth={2} />
+  </BarChart>
+</ResponsiveContainer>
+
+
+      {/* -------- PIE CHART -------- */}
+      <h3 style={{marginTop:20}}>Pie Chart - {pieDimension}</h3>
+      <select value={pieDimension} onChange={e=>setPieDimension(e.target.value)} style={{marginBottom:12}}>
+        <option value="Risk">Risk Score</option>
         <option value="Country">Country</option>
+        <option value="Amount">Amount ($)</option>
+        <option value="Weight">Weight (Kg)</option>
+        <option value="Transactions">Transactions</option>
         <option value="Entity">Entity</option>
       </select>
-
       <ResponsiveContainer width="100%" height={300}>
         <PieChart>
           <Pie
             data={pieData}
             dataKey="value"
             nameKey="name"
+            cx="50%"
+            cy="50%"
             outerRadius={100}
-            label={({ value }) => formatNumber(value)}
-          />
-          <Tooltip formatter={(v) => formatNumber(v)} />
+            label={({name,value})=>`${name}: ${value}`}
+          >
+            {pieData.map((_,index)=>(
+              <Cell key={index} fill={COLORS[index % COLORS.length]}/>
+            ))}
+          </Pie>
+          <Legend />
         </PieChart>
       </ResponsiveContainer>
 
-      {/* ===================== HEATMAP ===================== */}
-      <h3 style={{ marginTop: 30 }}>Country Activity Heatmap</h3>
+
+      {/* -------- HEATMAP -------- */}
+      <h3 style={{marginTop:30}}>Country Transaction Intensity Heatmap</h3>
       <ComposableMap projectionConfig={{ scale: 140 }}>
         <Geographies geography={geoUrl}>
           {({ geographies }) =>
             geographies.map((geo) => {
               const name = geo.properties.NAME;
-              const count = scatterData.filter(
-                (d) => d.country === name
-              ).length;
+              const val = heatmapData[name] || 0;
               return (
                 <Geography
                   key={geo.rsmKey}
                   geography={geo}
-                  fill={
-                    count
-                      ? `rgba(140,85,60,${Math.min(count / 10, 0.8)})`
-                      : "#EEE"
-                  }
+                  fill={ val ? `rgba(234,88,12,${val / maxHeat})` : "#EEE" }
                   stroke="#CCC"
                 />
               );
@@ -425,25 +500,21 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           }
         </Geographies>
 
-        {Object.entries(COUNTRY_COORDS).map(([c, coords]) => (
-          <Marker key={c} coordinates={coords}>
-            <circle r={3} fill="#333" />
-          </Marker>
-        ))}
-      </ComposableMap>
 
-      {/* ===================== SUMMARY ===================== */}
-      <h3 style={{ marginTop: 30 }}>Selection Summary</h3>
-      <ul>
-        {scatterData
-          .filter((d) => d.riskBand === "high")
-          .slice(0, 5)
-          .map((d, i) => (
-            <li key={i}>
-              {d.entity} — {d.country} — Risk {d.riskScore}
-            </li>
-          ))}
-      </ul>
+        {Object.entries(heatmapData).map(([country, val], idx) => {
+          const coords = COUNTRY_COORDS[country];
+          if (!coords) return null;
+          return (
+            <Marker key={idx} coordinates={coords}>
+              <circle
+                r={Math.min(Math.sqrt(val) * 2, 18)}
+                fill="orange"
+                opacity={0.7}
+              />
+            </Marker>
+          );
+        })}
+      </ComposableMap>
     </div>
   );
 }
