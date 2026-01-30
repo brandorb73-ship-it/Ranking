@@ -289,25 +289,32 @@ const countryComboData = useMemo(() => {
 }, [filteredData]);
 
 // ---------------- SANKEY DATA ----------------
+// ---------------- SANKEY METRIC ----------------
 const sankeyMetricOptions = ["Amount($)", "Weight(Kg)", "Quantity", "Transactions"];
 const [sankeyMetric, setSankeyMetric] = useState("Amount($)");
 
+// Helper: risk-based color
+function getRiskColor(riskScore) {
+  const RISK_COLORS = ["#3f7d3d", "#d97706", "#c2410c"]; // Low, Medium, High
+  return RISK_COLORS[riskScore] || "#8884d8";
+}
+
+// Memoized Sankey data
 const sankeyData = useMemo(() => {
+  if (!filteredData || !filteredData.length) return { nodes: [], links: [] };
+
   const nodesMap = {};
   const links = [];
 
   filteredData.forEach(r => {
     const entity = r.Entity || r.Exporter || r.Importer || r.entity;
     const country = r.Country || "Unknown";
-
-    // Compute entity risk
     const riskScore = r.riskScore || 0;
 
-    // Add nodes with color
-        if (!nodesMap[entity]) nodesMap[entity] = { name: entity, color: getRiskColor(riskScore) };
-    if (!nodesMap[country]) nodesMap[country] = { name: country, color: "#64748b" }; // countries
+    if (!nodesMap[entity]) nodesMap[entity] = { name: entity, color: getRiskColor(riskScore) };
+    if (!nodesMap[country]) nodesMap[country] = { name: country, color: "#64748b" };
 
-    // Compute link value
+    // Compute value based on metric
     let value = 0;
     switch (sankeyMetric) {
       case "Amount($)": value = Number(r.Amount || r["Amount($)"] || 0); break;
@@ -321,20 +328,18 @@ const sankeyData = useMemo(() => {
         source: entity,
         target: country,
         value,
-        color: getRiskColor(riskScore) // links inherit entity risk color
+        color: getRiskColor(riskScore)
       });
     }
   });
 
-  const nodes = Object.values(nodesMap);
-  return { nodes, links };
+  return { nodes: Object.values(nodesMap), links };
 }, [filteredData, sankeyMetric]);
 
 {/* -------- SANKEY DIAGRAM -------- */}
 <div style={{ marginTop: 20 }}>
   <h3>Entity → Country Flow (Sankey)</h3>
 
-  {/* Metric selector */}
   <select
     value={sankeyMetric}
     onChange={e => setSankeyMetric(e.target.value)}
@@ -345,31 +350,37 @@ const sankeyData = useMemo(() => {
     ))}
   </select>
 
-  <ResponsiveContainer width="100%" height={400}>
-    <Sankey
-      data={sankeyData}
-      nodePadding={15}
-      nodeWidth={15}
-      margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-      link={{ strokeOpacity: 0.6 }}
-    >
-      {/* Nodes color */}
-      {sankeyData.nodes.map((node, i) => (
-        <Sankey.Node key={i} node={node} fill={node.color} />
-      ))}
+  {sankeyData.nodes.length === 0 ? (
+    <div>No data available for Sankey</div>
+  ) : (
+    <ResponsiveContainer width="100%" height={400}>
+      <Sankey
+        data={sankeyData}
+        nodePadding={15}
+        nodeWidth={15}
+        margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+        link={{ strokeOpacity: 0.6 }}
+      >
+        {/* Nodes */}
+        {sankeyData.nodes.map((node, i) => (
+          <Sankey.Node key={i} node={node} fill={node.color} />
+        ))}
 
-      {/* Links color */}
-      {sankeyData.links.map((link, i) => (
-        <Sankey.Link key={i} link={link} stroke={link.color} />
-      ))}
+        {/* Links */}
+        {sankeyData.links.map((link, i) => (
+          <Sankey.Link key={i} link={link} stroke={link.color} />
+        ))}
 
-      <Tooltip
-        formatter={(value, name) => [typeof value === "number" ? formatNumber(value) : value, name]}
-      />
-    </Sankey>
-  </ResponsiveContainer>
+        <Tooltip
+          formatter={(value, name) => [
+            typeof value === "number" ? formatNumber(value) : value,
+            name
+          ]}
+        />
+      </Sankey>
+    </ResponsiveContainer>
+  )}
 </div>
-
 
   // ---------------- PIE CHART DATA ----------------
   const pieData = useMemo(() => {
