@@ -12,7 +12,8 @@ import {
   Cell,
   PieChart,
   Pie,
-  Legend
+  Legend,
+  Sankey 
 } from "recharts";
 import {
   ComposableMap,
@@ -29,6 +30,11 @@ const geoUrl =
 
 
 // ---------------- HELPERS ----------------
+function getRiskColor(riskScore) {
+  const RISK_COLORS = ["#3f7d3d", "#d97706", "#c2410c"]; // Low, Medium, High
+  return RISK_COLORS[riskScore] || "#8884d8";
+}
+
 function formatNumber(value, decimals = 2) {
   if (value == null) return "-";
   return Number(value).toLocaleString(undefined, {
@@ -183,6 +189,36 @@ const selectedEntityRows = useMemo(() => {
   );
 }, [selectedEntity, filteredData]);
 
+// ---------------- ENTITY FINGERPRINT PROFILE ----------------
+const entityFingerprint = useMemo(() => {
+  if (!selectedEntity || !selectedEntityRows.length) return null;
+
+  let totalValue = 0;
+  let totalWeight = 0;
+  let totalTxns = 0;
+  const countries = new Set();
+  let totalFlags = 0;
+
+  selectedEntityRows.forEach(r => {
+    totalValue += Number(r.Amount || r["Amount($)"] || 0);
+    totalWeight += Number(r.Weight || r["Weight(Kg)"] || 0);
+    totalTxns += Number(r.txnCount || r.Txns || 0);
+    if (r.Country) countries.add(r.Country);
+    totalFlags += r.riskFlags.length;
+  });
+
+  return {
+    entity: selectedEntity,
+    totalValue,
+    totalWeight,
+    totalTxns,
+    countryCount: countries.size,
+    avgValuePerTxn: totalValue / (totalTxns || 1),
+    avgWeightPerTxn: totalWeight / (totalTxns || 1),
+    flagDensity: totalFlags / (totalTxns || 1)
+  };
+}, [selectedEntity, selectedEntityRows]);
+
   // ---------------- SCATTER DATA ----------------
   const scatterData = useMemo(() => filteredData.map(r => ({
     weight: Number(r["Weight(Kg)"] || r.Weight || 0),
@@ -234,6 +270,106 @@ const selectedEntityRows = useMemo(() => {
   },[filteredData]);
   const maxHeat = Math.max(...Object.values(heatmapData),1);
 
+// ---------------- BAR + LINE COMBO DATA ----------------
+const countryComboData = useMemo(() => {
+  const agg = {};
+
+  filteredData.forEach(r => {
+    const country = r.Country || "Unknown";
+    if (!agg[country]) agg[country] = { value: 0, txns: 0 };
+    agg[country].value += Number(r.Amount || r["Amount($)"] || 0);
+    agg[country].txns += Number(r.txnCount || r.Txns || 0);
+  });
+
+  return Object.entries(agg).map(([country, v]) => ({
+    country,
+    value: v.value,
+    txns: v.txns
+  }));
+}, [filteredData]);
+
+// ---------------- SANKEY DATA ----------------
+const sankeyMetricOptions = ["Amount($)", "Weight(Kg)", "Quantity", "Transactions"];
+const [sankeyMetric, setSankeyMetric] = useState("Amount($)");
+
+const sankeyData = useMemo(() => {
+  const nodesMap = {};
+  const links = [];
+
+  filteredData.forEach(r => {
+    const entity = r.Entity || r.Exporter || r.Importer || r.entity;
+    const country = r.Country || "Unknown";
+
+    // Compute entity risk
+    const riskScore = r.riskScore || 0;
+
+    // Add nodes with color
+        if (!nodesMap[entity]) nodesMap[entity] = { name: entity, color: getRiskColor(riskScore) };
+    if (!nodesMap[country]) nodesMap[country] = { name: country, color: "#64748b" }; // countries
+
+    // Compute link value
+    let value = 0;
+    switch (sankeyMetric) {
+      case "Amount($)": value = Number(r.Amount || r["Amount($)"] || 0); break;
+      case "Weight(Kg)": value = Number(r.Weight || r["Weight(Kg)"] || 0); break;
+      case "Quantity": value = Number(r.Quantity || 0); break;
+      case "Transactions": value = Number(r.txnCount || r.Txns || 0); break;
+    }
+
+    if (value > 0) {
+      links.push({
+        source: entity,
+        target: country,
+        value,
+        color: getRiskColor(riskScore) // links inherit entity risk color
+      });
+    }
+  });
+
+  const nodes = Object.values(nodesMap);
+  return { nodes, links };
+}, [filteredData, sankeyMetric]);
+
+{/* -------- SANKEY DIAGRAM -------- */}
+<div style={{ marginTop: 20 }}>
+  <h3>Entity → Country Flow (Sankey)</h3>
+
+  {/* Metric selector */}
+  <select
+    value={sankeyMetric}
+    onChange={e => setSankeyMetric(e.target.value)}
+    style={{ marginBottom: 12 }}
+  >
+    {sankeyMetricOptions.map(opt => (
+      <option key={opt} value={opt}>{opt}</option>
+    ))}
+  </select>
+
+  <ResponsiveContainer width="100%" height={400}>
+    <Sankey
+      data={sankeyData}
+      nodePadding={15}
+      nodeWidth={15}
+      margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+      link={{ strokeOpacity: 0.6 }}
+    >
+      {/* Nodes color */}
+      {sankeyData.nodes.map((node, i) => (
+        <Sankey.Node key={i} node={node} fill={node.color} />
+      ))}
+
+      {/* Links color */}
+      {sankeyData.links.map((link, i) => (
+        <Sankey.Link key={i} link={link} stroke={link.color} />
+      ))}
+
+      <Tooltip
+        formatter={(value, name) => [typeof value === "number" ? formatNumber(value) : value, name]}
+      />
+    </Sankey>
+  </ResponsiveContainer>
+</div>
+
 
   // ---------------- PIE CHART DATA ----------------
   const pieData = useMemo(() => {
@@ -264,7 +400,6 @@ const selectedEntityRows = useMemo(() => {
       <div style={{marginBottom:12}}>
         <button className="btn secondary" onClick={exportPDF}>Export PDF</button>
       </div>
-
 
       {/* -------- FILTERS -------- */}
       <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
@@ -369,6 +504,41 @@ const selectedEntityRows = useMemo(() => {
         </ul>
       </div>
     ))}
+  </div>
+)}
+
+{entityFingerprint && (
+  <div
+    style={{
+      marginTop: 16,
+      padding: 16,
+      border: "1px solid #e5e7eb",
+      borderRadius: 8,
+      background: "#ffffff"
+    }}
+  >
+    <h3 style={{ marginBottom: 12 }}>
+      Entity Fingerprint — {entityFingerprint.entity}
+    </h3>
+
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 12
+      }}
+    >
+      <div><strong>Total Value</strong><br />${formatNumber(entityFingerprint.totalValue)}</div>
+      <div><strong>Total Weight</strong><br />{formatNumber(entityFingerprint.totalWeight)} Kg</div>
+      <div><strong>Total Transactions</strong><br />{formatInteger(entityFingerprint.totalTxns)}</div>
+      <div><strong>Countries Involved</strong><br />{entityFingerprint.countryCount}</div>
+      <div><strong>Avg Value / Txn</strong><br />${formatNumber(entityFingerprint.avgValuePerTxn)}</div>
+      <div><strong>Avg Weight / Txn</strong><br />{formatNumber(entityFingerprint.avgWeightPerTxn)} Kg</div>
+      <div>
+        <strong>Flag Density</strong><br />
+        {entityFingerprint.flagDensity.toFixed(2)} flags / txn
+      </div>
+    </div>
   </div>
 )}
 
