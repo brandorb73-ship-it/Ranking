@@ -2,10 +2,10 @@ import { useState } from "react";
 import Papa from "papaparse";
 
 export default function AddReportModal({ onSave, onClose }) {
-  const [title, setTitle] = useState("");
-  const [csv, setCsv] = useState("");
-  const [client, setClient] = useState("");
-  const [type, setType] = useState("Exporter");
+  const [title, setTitle] = useState(""); // Report Title
+  const [csv, setCsv] = useState(""); // CSV URL
+  const [client, setClient] = useState(""); // Optional client
+  const [type, setType] = useState("Exporter"); // Exporter / Importer / Pivot
 
   const [filters, setFilters] = useState({
     Country: "",
@@ -21,38 +21,48 @@ export default function AddReportModal({ onSave, onClose }) {
 
   const submit = () => {
     if (!title.trim() || !csv.trim()) {
-      alert("Title and CSV URL required");
+      alert("Report Title and CSV URL are required");
       return;
     }
 
-    // Parse CSV rows before saving
+    // ------------------ Parse CSV ------------------
     Papa.parse(csv, {
       download: true,
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const rows = results.data.map((row) => {
-          ["Transactions", "Weight(Kg)", "Amount($)", "Quantity"].forEach((k) => {
-            if (row[k]) row[k] = Number(String(row[k]).replace(/,/g, "")) || 0;
+        // ------------------ CSV NORMALIZATION ------------------
+        const expectedCols = ["PRODUCT", "Country", "Amount($)", "Weight(Kg)", "Quantity", "Type"];
+        const normalizedRows = results.data.map((row) => {
+          const newRow = {};
+          expectedCols.forEach((col) => {
+            const matchKey = Object.keys(row).find(
+              (k) => k.trim().toLowerCase() === col.trim().toLowerCase()
+            );
+            newRow[col] = matchKey ? row[matchKey] : "";
+
+            if (["Amount($)", "Weight(Kg)", "Quantity"].includes(col)) {
+              newRow[col] = Number(String(newRow[col]).replace(/,/g, "")) || 0;
+            }
           });
-          return row;
+          return newRow;
         });
 
+        // ------------------ CREATE VIEW OBJECT ------------------
         const newView = {
-          title,
+          title,              // <-- dynamic report title
           csv,
           client,
-          baseType: type,
+          baseType: type,     // Exporter / Importer / Pivot
           viewType: "BY_VALUE",
           filters,
-          rows,           // important for charts
-          filteredRows: rows, // initially same as rows
+          rows: normalizedRows,          // normalized CSV rows
+          filteredRows: normalizedRows,  // initially same
           createdAt: new Date().toISOString(),
         };
 
         console.log("PUBLISH OK", newView);
-
-        onSave(newView);
+        onSave(newView); // pass to parent
       },
       error: (err) => {
         alert("Error parsing CSV: " + err.message);
@@ -65,6 +75,7 @@ export default function AddReportModal({ onSave, onClose }) {
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <h2>Add New Intelligence View</h2>
 
+        {/* ---------------- Report Title ---------------- */}
         <div className="modal-row">
           <label>Report Title</label>
           <input
@@ -74,6 +85,7 @@ export default function AddReportModal({ onSave, onClose }) {
           />
         </div>
 
+        {/* ---------------- CSV URL ---------------- */}
         <div className="modal-row">
           <label>CSV URL</label>
           <input
@@ -83,6 +95,7 @@ export default function AddReportModal({ onSave, onClose }) {
           />
         </div>
 
+        {/* ---------------- Client ---------------- */}
         <div className="modal-row">
           <label>Client</label>
           <input
@@ -92,6 +105,7 @@ export default function AddReportModal({ onSave, onClose }) {
           />
         </div>
 
+        {/* ---------------- Report Type ---------------- */}
         <div className="modal-row">
           <label>Report Type</label>
           <select value={type} onChange={(e) => setType(e.target.value)}>
@@ -101,6 +115,7 @@ export default function AddReportModal({ onSave, onClose }) {
           </select>
         </div>
 
+        {/* ---------------- Filters ---------------- */}
         {Object.keys(filters).map((key) => (
           <div key={key} className="modal-row">
             <label>{key} Filter</label>
@@ -111,6 +126,7 @@ export default function AddReportModal({ onSave, onClose }) {
           </div>
         ))}
 
+        {/* ---------------- Actions ---------------- */}
         <div className="modal-actions">
           <button type="button" className="primary" onClick={submit}>
             Publish

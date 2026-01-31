@@ -1,3 +1,4 @@
+
 import { useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
@@ -211,6 +212,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   },[filteredData]);
   const maxHeat = Math.max(...Object.values(heatmapData),1);
 
+
   // ---------------- PIE CHART DATA ----------------
   const pieData = useMemo(() => {
     const map = {};
@@ -230,6 +232,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     return Object.entries(map).map(([name,value])=>({name,value}));
   }, [filteredData,pieDimension]);
   const COLORS = ["#1f4e79","#2563eb","#0ea5e9","#64748b","#475569","#64748b","#fbbf24","#f87171","#3f7d3d"];
+
 
   // ---------------- SANKEY DATA ----------------
   const sankeyData = useMemo(() => {
@@ -332,9 +335,18 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       <div style={{display:"flex", gap:40, marginTop:12}}>
         <div>
           <strong>Top Risk Entities:</strong>
-          <ol>
-            {topFlagged.map(r=><li key={r.Entity||r.Exporter||r.Importer||r.entity}>{r.Entity||r.Exporter||r.Importer||r.entity} ({r.riskFlags.length} flags)</li>)}
-          </ol>
+<ol>
+  {topFlagged.map(r => {
+    const entityName = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
+    const flagCount = r.riskFlags.length;
+    return (
+      <li key={entityName}>
+        {entityName} ({flagCount} flag{flagCount !== 1 ? "s" : ""})
+      </li>
+    );
+  })}
+</ol>
+
         </div>
         <div>
           <strong>Top Outliers:</strong>
@@ -360,33 +372,33 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       </tr>
     </thead>
     <tbody>
-      {filteredData.map((r) => {
-        const isSelected = r.Entity === selectedEntity || hoveredCountry === r.Country;
-        return (
-          <tr
-            key={r.Entity || r.Exporter || r.Importer || r.entity}
-            style={{ background: isSelected ? "#fde68a" : undefined, cursor: "pointer" }}
-            onClick={() => handleSelectEntity(r.Entity)}
-          >
-            <td>{r.Entity || r.Exporter || r.Importer || r.entity}</td>
-            <td>{r.Country}</td>
-            <td style={{ textAlign: "right" }}>
-              {formatNumber(r.Amount ?? r["Amount($)"] ?? 0)}
-            </td>
-            <td style={{ textAlign: "right" }}>
-              {formatNumber(r.Weight ?? r["Weight(Kg)"] ?? 0)}
-            </td>
-            <td style={{ textAlign: "right" }}>
-              {formatInteger(r.txnCount ?? r.Txns ?? 0)}
-            </td>
-            <td>{r.riskFlags.join(" | ")}</td>
-          </tr>
-        );
-      })}
-    </tbody>
+  {filteredData.map((r) => {
+    const entityName = r.Entity || r.Exporter || r.Importer || r.entity;
+    const isSelected = entityName === selectedEntity || hoveredCountry === r.Country;
+    return (
+      <tr
+        key={entityName}
+        style={{ background: isSelected ? "#fde68a" : undefined, cursor: "pointer" }}
+        onClick={() => handleSelectEntity(entityName)}
+      >
+        <td>{entityName}</td>
+        <td>{r.Country}</td>
+        <td style={{ textAlign: "right" }}>
+          {formatNumber(r.Amount ?? r["Amount($)"] ?? 0, 2)}
+        </td>
+        <td style={{ textAlign: "right" }}>
+          {formatNumber(r.Weight ?? r["Weight(Kg)"] ?? 0, 2)}
+        </td>
+        <td style={{ textAlign: "right" }}>
+          {formatInteger(r.txnCount ?? r.Txns ?? 0)}
+        </td>
+        <td>{r.riskFlags.join(" | ") || "-"}</td>
+      </tr>
+    );
+  })}
+</tbody>
   </table>
 </div>
-
 
       {/* -------- BAR + COMBO CHART -------- */}
       <h3 style={{marginTop:20}}>Country Value vs Transactions</h3>

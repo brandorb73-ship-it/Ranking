@@ -56,7 +56,7 @@ export default function PivotTable({ rows = [] }) {
           Pivot by:{" "}
           <select value={pivotBy} onChange={(e) => setPivotBy(e.target.value)}>
             <option value="PRODUCT">Product</option>
-            <option value="Country">Partner Country</option>
+            <option value="Country">Country</option>
           </select>
         </div>
 

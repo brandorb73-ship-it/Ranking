@@ -62,54 +62,66 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= REPORT VIEW ================= */}
-        {viewReport && (
-          <>
-            {/* View toggle */}
-            <div style={{ marginBottom: 12 }}>
-              <button
-                className="btn secondary"
-                onClick={() => setViewMode("table")}
-              >
-                Table
-              </button>{" "}
-              <button
-                className="btn secondary"
-                onClick={() => setViewMode("charts")}
-              >
-                Charts
-              </button>{" "}
-              <button
-                className="btn secondary"
-                onClick={() => setViewMode("combined")}
-              >
-                Combined
-              </button>
-            </div>
+      {/* ================= REPORT VIEW ================= */}
+{viewReport && (
+  <>
+    {/* View toggle */}
+    <div style={{ marginBottom: 12 }}>
+      <button
+        className="btn secondary"
+        onClick={() => setViewMode("table")}
+      >
+        Table
+      </button>{" "}
+      <button
+        className="btn secondary"
+        onClick={() => setViewMode("charts")}
+      >
+        Charts
+      </button>{" "}
+      <button
+        className="btn secondary"
+        onClick={() => setViewMode("combined")}
+      >
+        Combined
+      </button>
+    </div>
 
-            <div className="report-view-container">
-              {/* Charts view */}
-              {(viewMode === "charts" || viewMode === "combined") && (
-                <ChartDashboard
-                  rows={viewReport.rows || []}
-                  filteredRows={viewReport.filteredRows || []}
-                />
-              )}
+    <div className="report-view-container">
+      {viewReport.baseType === "Pivot" && (
+        <>
+          {(viewMode === "table" || viewMode === "combined") && (
+            <PivotReport rows={viewReport.rows} />
+          )}
 
-              {/* Table view */}
-              {(viewMode === "table" || viewMode === "combined") && (
-                <ReportTable
-                  report={viewReport}
-                  onBack={() => setViewReport(null)}
-                />
-              )}
-               {/* Pivot view ← ADD THIS AFTER */}
-  {viewMode === "pivot" && (
-    <PivotReport rows={viewReport.rows || []} />
-  )}
+          {(viewMode === "charts" || viewMode === "combined") && (
+            <div style={{ padding: 12, fontStyle: "italic", color: "#666" }}>
+              Pivot chart view coming soon (optional)
             </div>
-          </>
-        )}
+          )}
+        </>
+      )}
+
+      {viewReport.baseType !== "Pivot" && (
+        <>
+          {(viewMode === "charts" || viewMode === "combined") && (
+            <ChartDashboard
+              rows={viewReport.rows || []}
+              filteredRows={viewReport.filteredRows || []}
+            />
+          )}
+
+          {(viewMode === "table" || viewMode === "combined") && (
+            <ReportTable
+              report={viewReport}
+              onBack={() => setViewReport(null)}
+            />
+          )}
+        </>
+      )}
+    </div>
+  </>
+)}
 
         {/* ================= ADD REPORT MODAL ================= */}
         {showModal && (
