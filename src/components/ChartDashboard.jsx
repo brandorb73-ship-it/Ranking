@@ -24,7 +24,9 @@ import {
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
 
 // ---------------- HELPERS ----------------
 function formatNumber(value, decimals = 2) {
@@ -46,6 +48,7 @@ function deriveRiskFlags(row, context) {
   const { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap } =
     context;
 
+
   if (amount > p75Amount && weight < p25Weight) flags.push("High value / low weight");
   if (weight > p75Weight && amount < p25Amount) flags.push("High weight / low value");
   if (txn > p75Txn && amount < p25Amount) flags.push("High frequency / low value");
@@ -57,6 +60,7 @@ function getRiskScore(flags) {
   if (flags.length === 1) return 1; // Medium
   return 2; // High
 }
+
 
 // ---------------- COUNTRY COORDS ----------------
 const COUNTRY_COORDS = {
@@ -85,6 +89,7 @@ const COUNTRY_COORDS = {
   SouthAfrica: [24, -29],
 };
 
+
 // ---------------- MAIN COMPONENT ----------------
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
@@ -101,8 +106,10 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   });
   const [pieDimension, setPieDimension] = useState("Risk");
 
+
   const data = filteredRows.length ? filteredRows : rows;
   if (!data || !data.length) return <div style={{ padding: 20 }}>No data available</div>;
+
 
   // ---------------- CONTEXT FOR RISK FLAGS ----------------
   const context = useMemo(() => {
@@ -120,6 +127,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     const p75Txn = pct(sorted(txns), smallDataset ? 0.5 : 0.75);
     const p25Txn = pct(sorted(txns), 0.25);
 
+
     const countryCount = {};
     data.forEach(r => { if(r.Country) countryCount[r.Country] = (countryCount[r.Country]||0)+1; });
     const singleCountryMap = {};
@@ -129,12 +137,14 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     return { p75Amount, p25Amount, p75Weight, p25Weight, p75Txn, p25Txn, singleCountryMap };
   }, [data]);
 
+
   // ---------------- ENRICH DATA ----------------
   const enrichedData = useMemo(() => data.map(r => {
     const riskFlags = deriveRiskFlags(r, context);
     const riskScore = getRiskScore(riskFlags);
     return { ...r, riskFlags, riskScore };
   }), [data, context]);
+
 
   // ---------------- FILTERED DATA ----------------
   const filteredData = useMemo(() => {
@@ -150,6 +160,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     });
   }, [enrichedData, filters, showOnlyRisky]);
 
+
   // ---------------- SCATTER DATA ----------------
   const scatterData = useMemo(() => filteredData.map(r => ({
     weight: Number(r["Weight(Kg)"] || r.Weight || 0),
@@ -161,13 +172,16 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     txnCount: r.txnCount || r.Txns || 0,
   })), [filteredData]);
 
+
   const RISK_COLORS = ["#3f7d3d","#d97706","#c2410c"]; // Muted green, amber, red
   const CHART_COLORS = ["#1e3a8a","#2563eb","#0ea5e9","#64748b","#475569","#64748b"];
+
 
   // ---------------- HOVER & SELECTION HANDLING ----------------
   const handleScatterHover = (point) => setHoveredCountry(point.Country);
   const handleScatterLeave = () => setHoveredCountry(null);
   const handleSelectEntity = (entity) => setSelectedEntity(entity);
+
 
   // ---------------- TOP FLAGGED / OUTLIERS ----------------
   const topFlagged = useMemo(()=>[...filteredData].sort((a,b)=>b.riskFlags.length-a.riskFlags.length).slice(0,5),[filteredData]);
@@ -176,6 +190,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     const bScore=(Number(b.Amount||b["Amount($)"]||0)+Number(b.Weight||b["Weight(Kg)"]||0))/2;
     return bScore-aScore;
   }).slice(0,5),[filteredData]);
+
 
   // ---------------- PDF EXPORT ----------------
   const exportPDF = async ()=>{
@@ -186,6 +201,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     pdf.addImage(img,"PNG",10,10,190,0);
     pdf.save("charts.pdf");
   };
+
 
   // ---------------- HEATMAP DATA ----------------
   const heatmapData = useMemo(()=>{
@@ -220,20 +236,24 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     const nodesMap = {};
     const links = [];
 
+
     filteredData.forEach((r) => {
       const country = r.Country || "Unknown";
       const entity = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
       const risk = ["Low", "Medium", "High"][r.riskScore] || "Low";
+
 
       // Nodes
       nodesMap[country] = nodesMap[country] || { name: country };
       nodesMap[entity] = nodesMap[entity] || { name: entity };
       nodesMap[risk] = nodesMap[risk] || { name: risk };
 
+
       // Links: Country -> Entity
       let link = links.find(l => l.source === country && l.target === entity);
       if(link) link.value += 1;
       else links.push({ source: country, target: entity, value: 1 });
+
 
       // Links: Entity -> Risk
       link = links.find(l => l.source === entity && l.target === risk);
@@ -241,9 +261,11 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       else links.push({ source: entity, target: risk, value: 1 });
     });
 
+
     const nodes = Object.values(nodesMap);
     return { nodes, links };
   }, [filteredData]);
+
 
   return (
     <div ref={chartRef} style={{padding:20}}>
@@ -251,6 +273,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       <div style={{marginBottom:12}}>
         <button className="btn secondary" onClick={exportPDF}>Export PDF</button>
       </div>
+
 
       {/* -------- FILTERS -------- */}
       <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
@@ -260,6 +283,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
       </div>
       <label><input type="checkbox" checked={showOnlyRisky} onChange={e=>setShowOnlyRisky(e.target.checked)} style={{marginRight:6}}/>Show only risky entities</label>
 
+
       {/* -------- RISK LEGEND -------- */}
       <div style={{margin:8}}>
         <strong>Risk Legend:</strong>
@@ -267,6 +291,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         <span style={{background:RISK_COLORS[1],width:20,height:12,display:"inline-block",marginLeft:8}}/> Medium
         <span style={{background:RISK_COLORS[2],width:20,height:12,display:"inline-block",marginLeft:8}}/> High
       </div>
+
 
       {/* -------- SCATTER CHART -------- */}
       <h3 style={{marginTop:20}}>Weight vs Amount (Risk-Annotated)</h3>
@@ -302,6 +327,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         </ScatterChart>
       </ResponsiveContainer>
 
+
       {/* -------- SUMMARY PANEL -------- */}
       <div style={{display:"flex", gap:40, marginTop:12}}>
         <div>
@@ -317,6 +343,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           </ol>
         </div>
       </div>
+
 
       {/* -------- TABLE -------- */}
 <h3 style={{ marginTop: 20 }}>Data Table</h3>
@@ -360,6 +387,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   </table>
 </div>
 
+
       {/* -------- BAR + COMBO CHART -------- */}
       <h3 style={{marginTop:20}}>Country Value vs Transactions</h3>
       <ResponsiveContainer width="100%" height={300}>
@@ -384,6 +412,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
           <Line yAxisId="right" dataKey="txns" stroke={CHART_COLORS[1]} strokeWidth={2} />
         </BarChart>
       </ResponsiveContainer>
+
 
       {/* -------- PIE CHART -------- */}
       <h3 style={{marginTop:20}}>Pie Chart - {pieDimension}</h3>
@@ -412,66 +441,19 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         </PieChart>
       </ResponsiveContainer>
 
-{/* -------- SANKEY DIAGRAM -------- */}
-<h3 style={{ marginTop: 30 }}>Country → Entity → Risk Flow</h3>
 
-{filteredData.length > 0 ? (() => {
-  // ----- Prepare Sankey nodes and links -----
-  const nodes = [];
-  const links = [];
-  const nodeMap = {};
+      {/* -------- SANKEY DIAGRAM -------- */}
+      <h3 style={{ marginTop: 30 }}>Country → Entity → Risk Flow</h3>
+      <ResponsiveContainer width="100%" height={400}>
+        <Sankey
+          data={sankeyData}
+          node={{ nodePadding: 20, width: 15, stroke: "#888" }}
+          link={{ stroke: "#555", strokeOpacity: 0.5 }}
+        >
+          <Tooltip formatter={(value, name, props) => [`${value}`, `${props.source} → ${props.target}`]} />
+        </Sankey>
+      </ResponsiveContainer>
 
-  filteredData.forEach((r) => {
-    const country = r.Country || "Unknown";
-    const entity = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
-    const risk = ["Low", "Medium", "High"][r.riskScore] || "Unknown";
-
-    [country, entity, risk].forEach((name) => {
-      if (!nodeMap[name]) {
-        nodeMap[name] = { name };
-        nodes.push(nodeMap[name]);
-      }
-    });
-
-    links.push({ source: country, target: entity, value: 1, risk: r.riskScore });
-    links.push({ source: entity, target: risk, value: 1, risk: r.riskScore });
-  });
-
-  const sankeyData = { nodes, links };
-  const RISK_COLORS = ["#3f7d3d", "#d97706", "#c2410c"]; // Low, Medium, High
-
-  return (
-    <ResponsiveContainer width="100%" height={400}>
-      <Sankey
-        data={sankeyData}
-        node={{ nodePadding: 20, width: 15, stroke: "#888" }}
-        link={{ strokeOpacity: 0.7 }}
-        margin={{ top: 20, bottom: 20, left: 20, right: 20 }}
-      >
-        <Tooltip
-          formatter={(value, name, props) => {
-            const risk = props.payload.risk ?? 0;
-            const riskLabel = ["Low", "Medium", "High"][risk] || "Unknown";
-            return [`${value}`, `${props.source} → ${props.target} (${riskLabel})`];
-          }}
-        />
-        {/* Node colors */}
-        {sankeyData.nodes.map((node, idx) => (
-          <Cell key={`node-${idx}`} fill="#2563eb" />
-        ))}
-        {/* Link colors */}
-        {sankeyData.links.map((link, idx) => {
-          const color = RISK_COLORS[link.risk ?? 0];
-          return <Cell key={`link-${idx}`} fill={color} />;
-        })}
-      </Sankey>
-    </ResponsiveContainer>
-  );
-})() : (
-  <div style={{ padding: 50, textAlign: "center", color: "#888" }}>
-    No Sankey data available
-  </div>
-)}
 
       {/* -------- HEATMAP -------- */}
       <h3 style={{marginTop:30}}>Country Transaction Intensity Heatmap</h3>
@@ -492,6 +474,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
             })
           }
         </Geographies>
+
 
         {Object.entries(heatmapData).map(([country, val], idx) => {
           const coords = COUNTRY_COORDS[country];

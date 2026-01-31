@@ -5,6 +5,8 @@ import Header from "./components/Header";
 import AddReportModal from "./components/AddReportModal";
 import ReportTable from "./components/ReportTable";
 import ChartDashboard from "./components/ChartDashboard";
+import PivotReport from "./components/PivotReport";
+
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -101,6 +103,10 @@ export default function App() {
                   onBack={() => setViewReport(null)}
                 />
               )}
+               {/* Pivot view ← ADD THIS AFTER */}
+  {viewMode === "pivot" && (
+    <PivotReport rows={viewReport.rows || []} />
+  )}
             </div>
           </>
         )}
