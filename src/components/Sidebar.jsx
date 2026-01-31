@@ -18,6 +18,13 @@ export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDe
         >
           Importer Ranking
         </li>
+        <li
+  key="pivot"
+  className={activeTab === "Pivot" ? "active" : ""}
+  onClick={() => setActiveTab("Pivot")}
+>
+  Pivot Table
+</li>
       </ul>
 
       {reports.length > 0 ? (

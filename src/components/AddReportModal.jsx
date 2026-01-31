@@ -97,6 +97,7 @@ export default function AddReportModal({ onSave, onClose }) {
           <select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="Exporter">Exporter Ranking</option>
             <option value="Importer">Importer Ranking</option>
+            <option value="Pivot">Pivot Table</option>
           </select>
         </div>
 
