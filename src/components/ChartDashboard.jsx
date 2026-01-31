@@ -1,5 +1,5 @@
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -13,8 +13,7 @@ import {
   Cell,
   PieChart,
   Pie,
-  Legend,
-  Sankey
+  Legend
 } from "recharts";
 import {
   ComposableMap,
@@ -26,7 +25,8 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
 
-const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+const geoUrl =
+  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
 
 // ---------------- HELPERS ----------------
@@ -94,6 +94,8 @@ const COUNTRY_COORDS = {
 // ---------------- MAIN COMPONENT ----------------
 export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const chartRef = useRef(null);
+
+
   const [showOnlyRisky, setShowOnlyRisky] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [hoveredCountry, setHoveredCountry] = useState(null);
@@ -174,6 +176,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   })), [filteredData]);
 
 
+  // ---------------- COLOR PALETTES ----------------
   const RISK_COLORS = ["#3f7d3d","#d97706","#c2410c"]; // Muted green, amber, red
   const CHART_COLORS = ["#1e3a8a","#2563eb","#0ea5e9","#64748b","#475569","#64748b"];
 
@@ -184,7 +187,7 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
   const handleSelectEntity = (entity) => setSelectedEntity(entity);
 
 
-  // ---------------- TOP FLAGGED / OUTLIERS ----------------
+ // ---------------- TOP FLAGGED / OUTLIERS ----------------
   const topFlagged = useMemo(()=>[...filteredData].sort((a,b)=>b.riskFlags.length-a.riskFlags.length).slice(0,5),[filteredData]);
   const topOutliers = useMemo(()=>[...filteredData].sort((a,b)=>{
     const aScore=(Number(a.Amount||a["Amount($)"]||0)+Number(a.Weight||a["Weight(Kg)"]||0))/2;
@@ -231,47 +234,14 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
     });
     return Object.entries(map).map(([name,value])=>({name,value}));
   }, [filteredData,pieDimension]);
+
+
   const COLORS = ["#1f4e79","#2563eb","#0ea5e9","#64748b","#475569","#64748b","#fbbf24","#f87171","#3f7d3d"];
-
-
-  // ---------------- SANKEY DATA ----------------
-  const sankeyData = useMemo(() => {
-    const nodesMap = {};
-    const links = [];
-
-
-    filteredData.forEach((r) => {
-      const country = r.Country || "Unknown";
-      const entity = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
-      const risk = ["Low", "Medium", "High"][r.riskScore] || "Low";
-
-
-      // Nodes
-      nodesMap[country] = nodesMap[country] || { name: country };
-      nodesMap[entity] = nodesMap[entity] || { name: entity };
-      nodesMap[risk] = nodesMap[risk] || { name: risk };
-
-
-      // Links: Country -> Entity
-      let link = links.find(l => l.source === country && l.target === entity);
-      if(link) link.value += 1;
-      else links.push({ source: country, target: entity, value: 1 });
-
-
-      // Links: Entity -> Risk
-      link = links.find(l => l.source === entity && l.target === risk);
-      if(link) link.value += 1;
-      else links.push({ source: entity, target: risk, value: 1 });
-    });
-
-
-    const nodes = Object.values(nodesMap);
-    return { nodes, links };
-  }, [filteredData]);
 
 
   return (
     <div ref={chartRef} style={{padding:20}}>
+    
       {/* -------- ACTIONS -------- */}
       <div style={{marginBottom:12}}>
         <button className="btn secondary" onClick={exportPDF}>Export PDF</button>
@@ -330,100 +300,149 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
         </ScatterChart>
       </ResponsiveContainer>
 
+      <div className="summary-panel">
 
-      {/* -------- SUMMARY PANEL -------- */}
-      <div style={{display:"flex", gap:40, marginTop:12}}>
-        <div>
-          <strong>Top Risk Entities:</strong>
-<ol>
-  {topFlagged.map(r => {
-    const entityName = r.Entity || r.Exporter || r.Importer || r.entity || "Unknown";
-    const flagCount = r.riskFlags.length;
-    return (
-      <li key={entityName}>
-        {entityName} ({flagCount} flag{flagCount !== 1 ? "s" : ""})
-      </li>
-    );
-  })}
-</ol>
+  {/* === TOP RISK EXPORTERS === */}
+ <div className="summary-section">
+  <h3>Top Risk Exporters (Rule-based)</h3>
 
-        </div>
-        <div>
-          <strong>Top Outliers:</strong>
-          <ol>
-            {topOutliers.map(r=><li key={r.Entity||r.Exporter||r.Importer||r.entity}>{r.Entity||r.Exporter||r.Importer||r.entity} (${formatNumber(r.Amount||r["Amount($)"])}, {formatNumber(r.Weight||r["Weight(Kg)"])} Kg)</li>)}
-          </ol>
-        </div>
+  {(() => {
+    const rows = Object.entries(
+      filteredData.reduce((acc, r) => {
+        if (!r.Exporter || !r.riskFlags?.length) return acc;
+
+        if (!acc[r.Exporter]) acc[r.Exporter] = new Set();
+        r.riskFlags.forEach(f => acc[r.Exporter].add(f));
+        return acc;
+      }, {})
+    )
+      .map(([exporter, flags]) => ({
+        exporter,
+        flagCount: flags.size
+      }))
+      .sort((a, b) => b.flagCount - a.flagCount)
+      .slice(0, 10);
+
+    if (!rows.length) {
+      return <div className="summary-empty">No rule-based exporter risks detected</div>;
+    }
+
+    return rows.map((r, idx) => (
+      <div key={`risk-exp-${idx}`} className="summary-row">
+        <span className="summary-name">{r.exporter}</span>
+        <span className="summary-meta">
+          {r.flagCount} risk flag{r.flagCount !== 1 ? "s" : ""}
+        </span>
       </div>
+    ));
+  })()}
+</div>
+
+<div className="summary-section">
+  <h3>Top Risk Importers (Rule-based)</h3>
+
+  {(() => {
+    const rows = Object.entries(
+      filteredData.reduce((acc, r) => {
+        if (!r.Importer || !r.riskFlags || r.riskFlags.length === 0) {
+          return acc;
+        }
+
+        if (!acc[r.Importer]) {
+          acc[r.Importer] = new Set();
+        }
+
+        r.riskFlags.forEach(f => acc[r.Importer].add(f));
+        return acc;
+      }, {})
+    )
+      .map(([importer, flags]) => ({
+        importer,
+        flagCount: flags.size
+      }))
+      .sort((a, b) => b.flagCount - a.flagCount)
+      .slice(0, 10);
+
+    if (rows.length === 0) {
+      return (
+        <div className="summary-empty">
+          No rule-based importer risks detected
+        </div>
+      );
+    }
+
+    return rows.map((r, idx) => (
+      <div key={`risk-imp-${idx}`} className="summary-row">
+        <span className="summary-name">{r.importer}</span>
+        <span className="summary-meta">
+          {r.flagCount} risk flag{r.flagCount !== 1 ? "s" : ""}
+        </span>
+      </div>
+    ));
+  })()}
+</div>
+</div>  {/* <-- CLOSES summary-panel */}
 
 
       {/* -------- TABLE -------- */}
-<h3 style={{ marginTop: 20 }}>Data Table</h3>
-<div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #ccc" }}>
-  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-    <thead style={{ position: "sticky", top: 0, background: "#f4f4f4" }}>
-      <tr>
-        <th>Entity</th>
-        <th>Country</th>
-        <th>Amount ($)</th>
-        <th>Weight (Kg)</th>
-        <th>Transactions</th>
-        <th>Risk Flags</th>
-      </tr>
-    </thead>
-    <tbody>
-  {filteredData.map((r) => {
-    const entityName = r.Entity || r.Exporter || r.Importer || r.entity;
-    const isSelected = entityName === selectedEntity || hoveredCountry === r.Country;
-    return (
-      <tr
-        key={entityName}
-        style={{ background: isSelected ? "#fde68a" : undefined, cursor: "pointer" }}
-        onClick={() => handleSelectEntity(entityName)}
-      >
-        <td>{entityName}</td>
-        <td>{r.Country}</td>
-        <td style={{ textAlign: "right" }}>
-          {formatNumber(r.Amount ?? r["Amount($)"] ?? 0, 2)}
-        </td>
-        <td style={{ textAlign: "right" }}>
-          {formatNumber(r.Weight ?? r["Weight(Kg)"] ?? 0, 2)}
-        </td>
-        <td style={{ textAlign: "right" }}>
-          {formatInteger(r.txnCount ?? r.Txns ?? 0)}
-        </td>
-        <td>{r.riskFlags.join(" | ") || "-"}</td>
-      </tr>
-    );
-  })}
-</tbody>
-  </table>
-</div>
+      <h3 style={{marginTop:20}}>Data Table</h3>
+      <div style={{maxHeight:300, overflowY:"auto", border:"1px solid #ccc"}}>
+        <table style={{width:"100%", borderCollapse:"collapse"}}>
+          <thead style={{position:"sticky", top:0, background:"#f4f4f4"}}>
+            <tr>
+              <th>Entity</th>
+              <th>Country</th>
+              <th>Amount ($)</th>
+              <th>Weight (Kg)</th>
+              <th>Transactions</th>
+              <th>Risk Flags</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredData.map(r=>{
+              const isSelected = r.Entity===selectedEntity || hoveredCountry===r.Country;
+              return (
+                <tr key={r.Entity} id={`row-${r.Entity}`}
+                  style={{background:isSelected?"#fde68a":undefined, cursor:"pointer"}}
+                  onClick={()=>handleSelectEntity(r.Entity)}>
+                  <td>{r.Entity||r.Exporter||r.Importer||r.entity}</td>
+                  <td>{r.Country}</td>
+                  <td style={{textAlign:"right"}}>{formatNumber(r.Amount||r["Amount($)"])}</td>
+                  <td style={{textAlign:"right"}}>{formatNumber(r.Weight||r["Weight(Kg)"])}</td>
+                  <td style={{textAlign:"right"}}>{formatInteger(r.txnCount||r.Txns)}</td>
+                  <td>{r.riskFlags.join(" | ")}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
 
       {/* -------- BAR + COMBO CHART -------- */}
       <h3 style={{marginTop:20}}>Country Value vs Transactions</h3>
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart
-          data={Object.entries(
-            filteredData.reduce((agg, r) => {
-              const c = r.Country || "Unknown";
-              if (!agg[c]) agg[c] = { value: 0, txns: 0 };
-              agg[c].value += Number(r.Amount || r["Amount($)"] || 0);
-              agg[c].txns += Number(r.txnCount || r.Txns || 0);
-              return agg;
-            }, {})
-          ).map(([country, v]) => ({ country, value: v.value, txns: v.txns }))}
-          margin={{ top: 20, right: 20, bottom: 20, left: 60 }}
-        >
-          <XAxis dataKey="country" />
-          <YAxis yAxisId="left" orientation="left" tickFormatter={formatNumber} />
-          <YAxis yAxisId="right" orientation="right" tickFormatter={formatInteger} />
-          <Tooltip formatter={(v) => (typeof v === "number" ? formatNumber(v) : v)} />
-          <Legend />
-          <Bar yAxisId="left" dataKey="value" fill={CHART_COLORS[0]} />
-          <Line yAxisId="right" dataKey="txns" stroke={CHART_COLORS[1]} strokeWidth={2} />
-        </BarChart>
-      </ResponsiveContainer>
+  <BarChart
+    data={Object.entries(
+      filteredData.reduce((agg, r) => {
+        const c = r.Country || "Unknown";
+        if (!agg[c]) agg[c] = { value: 0, txns: 0 };
+        agg[c].value += Number(r.Amount || r["Amount($)"] || 0);
+        agg[c].txns += Number(r.txnCount || r.Txns || 0);
+        return agg;
+      }, {})
+    ).map(([country, v]) => ({ country, value: v.value, txns: v.txns }))}
+    margin={{ top: 20, right: 20, bottom: 20, left: 60 }}
+  >
+    <XAxis dataKey="country" />
+    <YAxis yAxisId="left" orientation="left" tickFormatter={formatNumber} />
+    <YAxis yAxisId="right" orientation="right" tickFormatter={formatInteger} />
+    <Tooltip formatter={(v) => (typeof v === "number" ? formatNumber(v) : v)} />
+    <Legend />
+    <Bar yAxisId="left" dataKey="value" fill={CHART_COLORS[0]} />
+    <Line yAxisId="right" dataKey="txns" stroke={CHART_COLORS[1]} strokeWidth={2} />
+  </BarChart>
+</ResponsiveContainer>
 
 
       {/* -------- PIE CHART -------- */}
@@ -447,23 +466,12 @@ export default function ChartDashboard({ rows = [], filteredRows = [] }) {
             outerRadius={100}
             label={({name,value})=>`${name}: ${value}`}
           >
-            {pieData.map((_,index)=>(<Cell key={index} fill={COLORS[index % COLORS.length]}/>))}
+            {pieData.map((_,index)=>(
+              <Cell key={index} fill={COLORS[index % COLORS.length]}/>
+            ))}
           </Pie>
           <Legend />
         </PieChart>
-      </ResponsiveContainer>
-
-
-      {/* -------- SANKEY DIAGRAM -------- */}
-      <h3 style={{ marginTop: 30 }}>Country → Entity → Risk Flow</h3>
-      <ResponsiveContainer width="100%" height={400}>
-        <Sankey
-          data={sankeyData}
-          node={{ nodePadding: 20, width: 15, stroke: "#888" }}
-          link={{ stroke: "#555", strokeOpacity: 0.5 }}
-        >
-          <Tooltip formatter={(value, name, props) => [`${value}`, `${props.source} → ${props.target}`]} />
-        </Sankey>
       </ResponsiveContainer>
 
 
