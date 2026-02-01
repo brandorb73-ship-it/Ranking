@@ -7,37 +7,42 @@ export default function ReportTable({ report, onBack }) {
   const [rows, setRows] = useState([]);
   const [filter, setFilter] = useState({});
 
-  // Placeholder CSV for testing if no CSV URL is provided
-  const sampleCSV = `Exporter,Transactions,Weight(Kg),Amount($),Quantity,Country,Notes,Url
-ABC Inc,10,100,5000,50,USA,Note1,http://example.com
-XYZ Ltd,5,50,2000,20,Canada,Note2,http://example.com
-MNO Corp,8,70,3000,30,Mexico,Note3,http://example.com`;
+  // Formatting Helper
+  const formatValue = (v, header = "") => {
+    if (v === null || v === undefined || isNaN(v)) return "0";
+    
+    const h = header.toLowerCase();
+    // No decimals for Quantity or Transactions
+    const isInteger = h.includes("quantity") || h.includes("transactions") || h.includes("txns");
+    
+    return Number(v).toLocaleString(undefined, {
+      minimumFractionDigits: isInteger ? 0 : 2,
+      maximumFractionDigits: isInteger ? 0 : 2,
+    });
+  };
 
   useEffect(() => {
     if (!report) return;
 
-    // If no CSV URL, use sample CSV
-    const csvSource = report.csv && report.csv.trim() !== "" ? report.csv : sampleCSV;
-    const download = report.csv && report.csv.trim() !== "";
+    const csvSource = report.csv && report.csv.trim() !== "" ? report.csv : "";
+    const isUrl = report.csv && report.csv.trim().startsWith("http");
 
     Papa.parse(csvSource, {
-      download,
+      download: isUrl,
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const data = results.data.map((row) => {
-          ["Transactions", "Weight(Kg)", "Amount($)", "Quantity"].forEach((k) => {
-            if (row[k]) {
-              row[k] = Number(String(row[k]).replace(/,/g, "")) || 0;
+        const cleanedData = results.data.map((row) => {
+          Object.keys(row).forEach((key) => {
+            const isNumericKey = /amount|weight|price|quantity|transactions|txns|value/i.test(key) || key.includes("$");
+            if (isNumericKey && row[key] !== null) {
+              const cleanNum = String(row[key]).replace(/[$,]/g, "");
+              row[key] = !isNaN(cleanNum) && cleanNum !== "" ? Number(cleanNum) : row[key];
             }
           });
           return row;
         });
-        setRows(data);
-      },
-      error: (err) => {
-        console.error("CSV parse error:", err);
-        setRows([]); // fallback to empty
+        setRows(cleanedData);
       },
     });
   }, [report]);
@@ -58,7 +63,7 @@ MNO Corp,8,70,3000,30,Mexico,Note3,http://example.com`;
   const exportPDF = () => {
     const el = document.getElementById("report-table");
     if (!el) return;
-    html2canvas(el).then((canvas) => {
+    html2canvas(el, { scale: 2 }).then((canvas) => {
       const img = canvas.toDataURL("image/png");
       const pdf = new jsPDF("l", "pt", "a4");
       pdf.addImage(img, "PNG", 20, 20, 800, 0);
@@ -66,41 +71,30 @@ MNO Corp,8,70,3000,30,Mexico,Note3,http://example.com`;
     });
   };
 
-  if (!rows.length) {
-    return <div className="empty-state">Loading report…</div>;
-  }
+  if (!rows.length) return <div className="empty-state">Loading report…</div>;
+
+  const columnHeaders = Object.keys(rows[0]);
 
   return (
     <div className="report-wrapper">
       <div className="report-header">
-        <button className="btn secondary" onClick={onBack}>
-          ← Back
-        </button>
+        <button className="btn secondary" onClick={onBack}>← Back</button>
         <h2>{report.title || "Untitled Report"}</h2>
-        <button className="btn primary" onClick={exportPDF}>
-          Export PDF
-        </button>
+        <button className="btn primary" onClick={exportPDF}>Export PDF</button>
       </div>
 
       <div className="table-container" id="report-table">
         <table className="report-table">
           <thead>
             <tr>
-              {Object.keys(rows[0]).map((h) => (
+              {columnHeaders.map((h) => (
                 <th key={h}>
                   <div className="th-title">{h}</div>
-                  <select
-                    value={filter[h] || ""}
-                    onChange={(e) => handleFilter(h, e.target.value)}
-                  >
+                  <select value={filter[h] || ""} onChange={(e) => handleFilter(h, e.target.value)}>
                     <option value="">All</option>
-                    {[...new Set(rows.map((r) => r[h]).filter(Boolean))].map(
-                      (v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      )
-                    )}
+                    {[...new Set(rows.map((r) => r[h]).filter(Boolean))].map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
                   </select>
                 </th>
               ))}
@@ -110,31 +104,29 @@ MNO Corp,8,70,3000,30,Mexico,Note3,http://example.com`;
           <tbody>
             {filteredRows.map((r, i) => (
               <tr key={i}>
-                {Object.entries(r).map(([k, v]) => (
-                  <td key={k}>
-                    {k === "Url" ? (
-                      <a href={v} target="_blank" rel="noreferrer">
-                        Link
-                      </a>
-                    ) : typeof v === "number" ? (
-                      v.toFixed(2)
+                {columnHeaders.map((h) => (
+                  <td key={h} style={{ textAlign: typeof r[h] === "number" ? "right" : "left" }}>
+                    {h === "Url" ? (
+                      <a href={r[h]} target="_blank" rel="noreferrer">Link</a>
+                    ) : typeof r[h] === "number" ? (
+                      formatValue(r[h], h)
                     ) : (
-                      v
+                      r[h]
                     )}
                   </td>
                 ))}
               </tr>
             ))}
 
-            <tr className="total-row">
-              <td>Total</td>
-              <td>{total("Transactions").toFixed(2)}</td>
-              <td>{total("Weight(Kg)").toFixed(2)}</td>
-              <td>{total("Amount($)").toFixed(2)}</td>
-              <td>{total("Quantity").toFixed(2)}</td>
-              {Object.keys(rows[0]).slice(5).map((_, i) => (
-                <td key={i}></td>
-              ))}
+            <tr className="total-row" style={{ fontWeight: "bold", background: "#f9f9f9" }}>
+              {columnHeaders.map((h, i) => {
+                const isNumeric = typeof rows[0][h] === "number";
+                return (
+                  <td key={h} style={{ textAlign: isNumeric ? "right" : "left" }}>
+                    {i === 0 ? "Total" : isNumeric ? formatValue(total(h), h) : ""}
+                  </td>
+                );
+              })}
             </tr>
           </tbody>
         </table>

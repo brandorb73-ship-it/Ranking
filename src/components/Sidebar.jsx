@@ -1,9 +1,11 @@
 import React from "react";
 
+
 export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDelete }) {
   return (
     <div className="sidebar">
       <h2>Reports</h2>
+
 
       <ul className="tab-list">
         <li
@@ -26,6 +28,7 @@ export default function Sidebar({ activeTab, setActiveTab, reports, onView, onDe
   Pivot Table
 </li>
       </ul>
+
 
       {reports.length > 0 ? (
         <ul className="view-list">
