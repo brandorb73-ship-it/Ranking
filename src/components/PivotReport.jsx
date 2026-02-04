@@ -32,56 +32,100 @@ export default function PivotReport({ rows = [], reportName = "Master Trade Hub 
   const COLORS = { primary: "#1d3557", secondary: "#e63946", accent: "#f4a261", highlight: "#e0f7fa", footer: "#f1f3f5", warning: "#fff3e0" };
 
   // 1. Build Base Pivot Data
-  const allPivotData = useMemo(() => {
+const allPivotData = useMemo(() => {
     const pivotMap = {};
     rows.forEach((r) => {
       const key = r[pivotBy] || "Unknown";
       if (!pivotMap[key]) {
         pivotMap[key] = { [pivotBy]: key, Export: 0, Import: 0, ExpQty: 0, ImpQty: 0, ExpWgt: 0, ImpWgt: 0 };
       }
+      
       const type = r.Type?.toLowerCase() === "export" ? "Export" : "Import";
-      pivotMap[key][type] += Number(r[measure] || 0);
+      const val = Number(r[measure] || 0);
+      const q = Number(r["Quantity"] || 0);
+      const w = Number(r["Weight(Kg)"] || 0);
+
+      pivotMap[key][type] += val;
       if (type === "Export") {
-        pivotMap[key].ExpQty += Number(r["Quantity"] || 0);
-        pivotMap[key].ExpWgt += Number(r["Weight(Kg)"] || 0);
+        pivotMap[key].ExpQty += q;
+        pivotMap[key].ExpWgt += w;
       } else {
-        pivotMap[key].ImpQty += Number(r["Quantity"] || 0);
-        pivotMap[key].ImpWgt += Number(r["Weight(Kg)"] || 0);
+        pivotMap[key].ImpQty += q;
+        pivotMap[key].ImpWgt += w;
       }
     });
 
     return Object.values(pivotMap).map(r => {
       const grandTotal = r.Export + r.Import;
-      const wgtRatio = r.ImpWgt > 0 ? (r.ExpWgt / r.ImpWgt) : 0;
-      const qtyRatio = r.ImpQty > 0 ? (r.ExpQty / r.ImpQty) : 0;
-      const leakageLoss = qtyRatio < 1 ? r.Import * (1 - qtyRatio) : 0;
+      
+      // Calculate Ratio: If it's a destination, we show it as 100% pass-thru 
+      // of its own value to ensure the line chart has data points.
+      const wgtRatio = r.ImpWgt > 0 ? (r.ExpWgt / r.ImpWgt) : (r.ExpWgt > 0 ? 1 : 0);
+      const qtyRatio = r.ImpQty > 0 ? (r.ExpQty / r.ImpQty) : (r.ExpQty > 0 ? 1 : 0);
+      
+      // Difference: Total value gap for that specific entity
+      const diff = Math.abs(r.Export - r.Import);
+
+      // Leakage: Only calculated if there's an import to lose from
+      let leakageLoss = 0;
+      if (r.Import > 0 && r.Export < r.Import) {
+        leakageLoss = r.Import - r.Export;
+      }
 
       return {
         ...r,
         "Grand Total": grandTotal,
-        Difference: Math.abs(r.Export - r.Import),
+        Difference: diff,
         "Import %": grandTotal ? (r.Import / grandTotal) * 100 : 0,
         "Export %": grandTotal ? (r.Export / grandTotal) * 100 : 0,
         "Wgt Ratio": wgtRatio,
         "Qty Ratio": qtyRatio,
         "Leakage Loss": leakageLoss,
-        "Is Anomaly": wgtRatio < 0.85 || wgtRatio > 1.15 || qtyRatio < 0.85
+        "Is Anomaly": (r.Import > 0 && r.Export > 0) && (wgtRatio < 0.85 || wgtRatio > 1.15)
       };
     }).sort((a, b) => b.Export - a.Export);
   }, [rows, pivotBy, measure]);
 
-  const filteredPivot = useMemo(() => {
-    if (selectedItems.length === 0) return allPivotData;
-    return allPivotData.filter(item => selectedItems.includes(item[pivotBy]));
-  }, [allPivotData, selectedItems, pivotBy]);
+const [hubMode, setHubMode] = useState(false);
 
-  const grandTotals = useMemo(() => {
-    return filteredPivot.reduce((acc, r) => {
-      acc.Export += r.Export; acc.Import += r.Import; acc.GrandTotal += r["Grand Total"];
-      acc.ExpQty += r.ExpQty; acc.ImpQty += r.ImpQty; acc.ExpWgt += r.ExpWgt; acc.ImpWgt += r.ImpWgt;
-      acc.Difference += r.Difference; acc.LeakageLoss += r["Leakage Loss"];
-      return acc;
-    }, { Export: 0, Import: 0, GrandTotal: 0, ExpQty: 0, ImpQty: 0, ExpWgt: 0, ImpWgt: 0, Difference: 0, LeakageLoss: 0 });
+const filteredPivot = useMemo(() => {
+    let data = selectedItems.length === 0 
+      ? allPivotData 
+      : allPivotData.filter(item => selectedItems.includes(item[pivotBy]));
+
+    if (hubMode) {
+      // Hub Mode: Only show items that have BOTH Import and Export records
+      data = data.filter(item => item.Import > 0 && item.Export > 0);
+    }
+
+    return data;
+  }, [allPivotData, selectedItems, pivotBy, hubMode]);
+
+const grandTotals = useMemo(() => {
+    // 1. Sum raw numeric values across all pivoted rows
+    const totals = filteredPivot.reduce((acc, curr) => ({
+      Export: acc.Export + (Number(curr.Export) || 0),
+      Import: acc.Import + (Number(curr.Import) || 0),
+      ExpWgt: acc.ExpWgt + (Number(curr.ExpWgt) || 0),
+      ImpWgt: acc.ImpWgt + (Number(curr.ImpWgt) || 0),
+      LeakageLoss: acc.LeakageLoss + (Number(curr["Leakage Loss"]) || 0)
+    }), { Export: 0, Import: 0, ExpWgt: 0, ImpWgt: 0, LeakageLoss: 0 });
+
+    const totalSystemValue = totals.Export + totals.Import;
+    
+    // 2. Calculate the system-wide percentages
+    // We use these specific keys to match what the table footer expects
+    const impPercent = totalSystemValue > 0 ? (totals.Import / totalSystemValue) * 100 : 0;
+    const expPercent = totalSystemValue > 0 ? (totals.Export / totalSystemValue) * 100 : 0;
+
+    return {
+      ...totals,
+      "Import %": impPercent,
+      "Export %": expPercent,
+      Difference: Math.abs(totals.Export - totals.Import),
+      // Weight ratio for the top cards
+      systemWgtRatio: totals.ImpWgt > 0 ? (totals.ExpWgt / totals.ImpWgt) : (totals.ExpWgt > 0 ? 1 : 0)
+    };
   }, [filteredPivot]);
 
   const exportCSV = () => {
@@ -126,6 +170,12 @@ export default function PivotReport({ rows = [], reportName = "Master Trade Hub 
           <button onClick={() => setSelectedItems([])}>Clear Filter</button>
           <button onClick={exportCSV} style={{ background: '#2a9d8f', color: '#fff' }}>Export CSV</button>
           <button onClick={exportPDF} style={{ background: COLORS.primary, color: "#fff" }}>Download PDF</button>
+          <button 
+  onClick={() => setHubMode(!hubMode)} 
+  style={{ background: hubMode ? COLORS.primary : "#ccc", color: "#fff" }}
+>
+  {hubMode ? "Showing: Hubs Only" : "Showing: All Trade"}
+</button>
         </div>
 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
@@ -150,15 +200,24 @@ export default function PivotReport({ rows = [], reportName = "Master Trade Hub 
                   <td style={{ fontWeight: "bold" }}>{r[pivotBy]}</td>
                   <td style={{ textAlign: "right" }}>{fNum(r.Export)}</td>
                   <td style={{ textAlign: "right" }}>{fNum(r.Import)}</td>
-                  <td style={{ textAlign: "right" }}>{fNum(r.Difference)}</td>
+                  <th style={{ textAlign: "right" }}>{fNum(r.Difference)}</th>
                   <td style={{ textAlign: "right" }}>{fNum(r["Import %"])}%</td>
                   <td style={{ textAlign: "right", padding: "12px" }}>{fNum(r["Export %"])}%</td>
                 </tr>
               );
             })}
           </tbody>
-          <tfoot style={{ background: COLORS.footer, fontWeight: "bold" }}>
-            <tr><td colSpan={2} style={{ padding: "12px" }}>TOTAL</td><td style={{ textAlign: "right" }}>{fNum(grandTotals.Export)}</td><td style={{ textAlign: "right" }}>{fNum(grandTotals.Import)}</td><td style={{ textAlign: "right" }}>{fNum(grandTotals.Difference)}</td><td style={{ textAlign: "right" }}>{fNum((grandTotals.Import / grandTotals.GrandTotal) * 100)}%</td><td style={{ textAlign: "right", padding: "12px" }}>{fNum((grandTotals.Export / grandTotals.GrandTotal) * 100)}%</td></tr>
+          {/* --- THE ALIGNMENT FIX IS HERE --- */}
+          <tfoot>
+            <tr style={{ background: "#f1f4f9", fontWeight: "bold", borderTop: "2px solid #457b9d" }}>
+              <td style={{ padding: "10px" }}>GRAND TOTAL</td>
+              <td></td> {/* This empty cell pushes the numbers to the correct columns */}
+              <td style={{ textAlign: "right", padding: "10px" }}>{fNum(grandTotals.Export)}</td>
+              <td style={{ textAlign: "right", padding: "10px" }}>{fNum(grandTotals.Import)}</td>
+              <td style={{ textAlign: "right", padding: "10px" }}>{fNum(grandTotals.Difference)}</td>
+              <td style={{ textAlign: "right", padding: "10px" }}>{fNum(grandTotals["Import %"])}%</td>
+              <td style={{ textAlign: "right", padding: "12px" }}>{fNum(grandTotals["Export %"])}%</td>
+            </tr>
           </tfoot>
         </table>
 
@@ -170,56 +229,205 @@ export default function PivotReport({ rows = [], reportName = "Master Trade Hub 
         </div>
       </div>
 
-      {/* PAGE 2: HUB WEIGHT ANALYSIS & TREND */}
-      <div ref={p2} style={{ background: "#fff", padding: "50px", marginBottom: "30px", border: "1px solid #ddd" }}>
-        <h2 style={{ color: COLORS.primary }}>HUB THROUGHPUT & AUDIT INTERPRETATION</h2>
-        <div style={{ display: "flex", gap: 20, background: COLORS.footer, padding: 25, marginBottom: 30, borderRadius: 8 }}>
-           <div style={{flex:1, textAlign:'center'}}><strong>Qty Pass-thru</strong><div style={{fontSize:24}}>{fNum(grandTotals.ExpQty/grandTotals.ImpQty)}x</div></div>
-           <div style={{flex:1, textAlign:'center'}}><strong>Weight Pass-thru</strong><div style={{fontSize:24}}>{fNum(grandTotals.ExpWgt/grandTotals.ImpWgt)}x</div></div>
-           <div style={{flex:1, textAlign:'center', color: COLORS.secondary}}><strong>Leakage Loss ($)</strong><div style={{fontSize:24}}>${fNum(grandTotals.LeakageLoss)}</div></div>
+{/* PAGE 2: HUB ANALYSIS */}
+<div ref={p2} style={{ background: "#fff", padding: "50px", border: "1px solid #ddd" }}>
+  
+  {/* --- SYSTEM BALANCE BAR --- */}
+  <div style={{ 
+    background: grandTotals.systemWgtRatio > 0.95 && grandTotals.systemWgtRatio < 1.05 ? "#2a9d8f" : COLORS.secondary, 
+    color: '#fff', padding: '15px 25px', borderRadius: '8px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' 
+  }}>
+    <div>
+      <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>System Mass Balance (Source vs Global)</span>
+      <div style={{ fontSize: '22px', fontWeight: 'bold' }}>
+        {fNum(grandTotals.systemWgtRatio)}x 
+        <span style={{ fontSize: '12px', marginLeft: '10px', fontWeight: 'normal' }}>
+          {grandTotals.systemWgtRatio >= 1 ? "(Surplus/Value Add)" : "(System Leakage)"}
+        </span>
+      </div>
+    </div>
+    <div style={{ textAlign: 'right' }}>
+      <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>Net Difference</span>
+      <div style={{ fontSize: '22px', fontWeight: 'bold' }}>
+        {fNum(Math.abs(grandTotals.ExpWgt - grandTotals.ImpWgt))} Kg
+      </div>
+    </div>
+  </div>
+<div style={{ 
+  padding: '10px 20px', 
+  borderRadius: '4px', 
+  background: grandTotals.systemWgtRatio === 1 ? '#e6fffa' : '#fff5f5',
+  border: `1px solid ${grandTotals.systemWgtRatio === 1 ? '#38b2ac' : '#feb2b2'}`,
+  marginBottom: '20px',
+  fontSize: '13px'
+}}>
+  <strong>System Balance Check:</strong> {grandTotals.systemWgtRatio === 1 
+    ? "✅ Total destination weight perfectly matches source weight." 
+    : `⚠️ Discrepancy detected: System is operating at ${fNum(grandTotals.systemWgtRatio)}x capacity.`}
+</div>
+  {/* Metric Cards - Fixed to show 1.00x if system is balanced */}
+  <div style={{ display: "flex", gap: "20px", background: COLORS.footer, padding: "25px", marginBottom: "30px", borderRadius: "8px" }}>
+     <div style={{ flex: 1, textAlign: "center" }}>
+       <strong>Global Weight Pass-thru</strong>
+       <div style={{ fontSize: "24px" }}>{fNum(grandTotals.systemWgtRatio)}x</div>
+     </div>
+     <div style={{ flex: 1, textAlign: "center", color: COLORS.secondary }}>
+       <strong>Financial Leakage</strong>
+       <div style={{ fontSize: "24px" }}>${fNum(grandTotals.Leakage)}</div>
+     </div>
+  </div>
+
+     {/* Header with Tooltip Pop-up */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ color: COLORS.primary, margin: 0 }}>HUB THROUGHPUT & AUDIT INTERPRETATION</h2>
+          <button 
+            onClick={() => alert(
+              "HUB ANALYSIS CALCULATIONS:\n\n" +
+              "1. PASS-THRU RATIO (Qty/Wgt):\n" +
+              "Formula: Export Mass ÷ Import Mass\n" +
+              "Audits if physical goods are being diverted or unrecorded.\n\n" +
+              "2. LEAKAGE LOSS ($):\n" +
+              "Formula: Import Value - Export Value\n" +
+              "Calculates the financial 'Value at Risk' for goods that entered the hub but did not exit.\n\n" +
+              "3. ORIGIN ONLY:\n" +
+              "Indicates the entity is the primary source; no Import records exist for this item."
+            )}
+            style={{ 
+              background: COLORS.accent, 
+              border: 'none', 
+              borderRadius: '50%', 
+              width: "28px", 
+              height: "28px", 
+              cursor: 'help', 
+              color: '#fff', 
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            ?
+          </button>
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", marginBottom: 40 }}>
+      {/* --- EXECUTIVE SUMMARY BAR --- */}
+        <div style={{ background: COLORS.primary, color: '#fff', padding: '20px 30px', borderRadius: '8px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ opacity: 0.8, fontSize: '12px', letterSpacing: '1px' }}>TOTAL SYSTEM LEAKAGE (FINANCIAL RISK)</span>
+            <div style={{ fontSize: '28px', fontWeight: 'bold' }}>${fNum(grandTotals.LeakageLoss)}</div>
+          </div>
+          <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.3)' }}></div>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ opacity: 0.8, fontSize: '12px', letterSpacing: '1px' }}>AVG SYSTEM WEIGHT PASS-THRU</span>
+            <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+              {/* FIXED: Now correctly displays the ratio (e.g., 1.00x) */}
+              {fNum(grandTotals.systemWgtRatio)}x
+            </div>
+          </div>
+        </div>
+
+        {/* Secondary Metric Cards */}
+        <div style={{ display: "flex", gap: "20px", background: COLORS.footer, padding: "25px", marginBottom: "30px", borderRadius: "8px" }}>
+           <div style={{ flex: 1, textAlign: "center" }}>
+             <strong>Qty Pass-thru</strong>
+             <div style={{ fontSize: "24px" }}>{grandTotals.ImpQty > 0 ? fNum(grandTotals.ExpQty / grandTotals.ImpQty) : "0.00"}x</div>
+           </div>
+           <div style={{ flex: 1, textAlign: "center" }}>
+             <strong>Weight Pass-thru</strong>
+             <div style={{ fontSize: "24px" }}>{grandTotals.ImpWgt > 0 ? fNum(grandTotals.ExpWgt / grandTotals.ImpWgt) : "0.00"}x</div>
+           </div>
+           <div style={{ flex: 1, textAlign: "center", color: COLORS.secondary }}>
+             <strong>Leakage Items</strong>
+             <div style={{ fontSize: "24px" }}>{filteredPivot.filter(r => r["Leakage Loss"] > 0).length}</div>
+           </div>
+        </div>
+
+  {/* Data Table */}
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", marginBottom: "40px" }}>
           <thead>
             <tr style={{ background: "#457b9d", color: "#fff" }}>
-              <th style={{ textAlign: "left", padding: "10px" }}>{pivotBy}</th>
-              <th style={{ textAlign: "right" }}>Qty Ratio</th>
-              <th style={{ textAlign: "right" }}>Wgt Ratio</th>
-              <th style={{ textAlign: "right", padding: "10px" }}>Leakage Loss ($)</th>
+              <th style={{ textAlign: "left", padding: "12px" }}>{pivotBy.toUpperCase()}</th>
+              <th style={{ textAlign: "right", padding: "12px" }}>Flow Type</th>
+              <th style={{ textAlign: "right", padding: "12px" }}>Wgt Ratio</th>
+              <th style={{ textAlign: "right", padding: "12px" }}>Leakage ({measure})</th>
             </tr>
           </thead>
           <tbody>
-            {filteredPivot.map((r, i) => (
-              <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "10px" }}>{r[pivotBy]}</td>
-                <td style={{ textAlign: "right" }}>{fNum(r["Qty Ratio"])}x</td>
-                <td style={{ textAlign: "right" }}>{fNum(r["Wgt Ratio"])}x</td>
-                <td style={{ textAlign: "right", padding: "10px", color: COLORS.secondary }}>${fNum(r["Leakage Loss"])}</td>
-              </tr>
-            ))}
+            {filteredPivot.map((r, i) => {
+              // 1. Label Logic
+              let flowLabel = "";
+              if (pivotBy === "PRODUCT") {
+                if (r.Import > 0 && r.Export > 0) flowLabel = "Active Trade";
+                else if (r.Import > 0 && r.Export === 0) flowLabel = "Stock Piling";
+                else if (r.Export > 0 && r.Import === 0) flowLabel = "Outbound Only";
+              } else {
+                if (r.Import > 0 && r.Export > 0) flowLabel = "Transit Hub";
+                else if (r.Import > 0 && r.Export === 0) flowLabel = "Source (China)";
+                else if (r.Export > 0 && r.Import === 0) flowLabel = "Destination Market";
+              }
+
+              // 2. Row Rendering
+              return (
+                <tr key={`hub-row-${pivotBy}-${i}`} style={{ borderBottom: "1px solid #eee" }}>
+                  <td style={{ padding: "12px", fontWeight: "bold" }}>{r[pivotBy]}</td>
+                  <td style={{ textAlign: "right", padding: "12px", color: "#666" }}>{flowLabel}</td>
+                  <td style={{ textAlign: "right", padding: "12px" }}>
+                    {r.ImpWgt > 0 ? `${fNum(r["Wgt Ratio"])}x` : "1.00x (Source)"}
+                  </td>
+                  <td style={{ 
+  textAlign: "right", 
+  padding: "12px", 
+  color: r["Leakage Loss"] > 0 ? COLORS.secondary : "inherit",
+  fontWeight: r["Leakage Loss"] > 0 ? "bold" : "normal"
+}}>
+  {measure === "Amount($)" && `$`}
+  {fNum(r["Leakage Loss"])}
+  {measure === "Weight(Kg)" && ` Kg`}
+  {measure === "Quantity" && ` units`}
+</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
-        <div style={{ height: 300, marginBottom: 40 }}>
-          <ResponsiveContainer>
-            <ComposedChart data={filteredPivot.slice(0, 10)} margin={{ left: 60 }}>
-              <XAxis dataKey={pivotBy}/><YAxis tickFormatter={fNum}/><Tooltip formatter={fNum}/><Legend/><Bar dataKey="Qty Ratio" fill={COLORS.accent}/><Line type="monotone" dataKey="Wgt Ratio" stroke={COLORS.primary} strokeWidth={2}/><ReferenceLine y={1} stroke="red" label="1.0 Equil."/></ComposedChart>
+        {/* Comparison Chart */}
+        <div style={{ height: 320, marginBottom: "40px" }}>
+          <h4 style={{ color: "#666", marginBottom: "10px", fontSize: "12px" }}>TOP 10 HUB THROUGHPUT RATIOS</h4>
+          <ResponsiveContainer key={`hub-chart-main-${pivotBy}-${hubMode}`}>
+            <ComposedChart data={filteredPivot.slice(0, 10)} margin={{ left: 40, right: 20 }}>
+              <XAxis dataKey={pivotBy} tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={fNum} />
+              <Tooltip formatter={fNum} />
+              <Legend verticalAlign="top" height={36}/>
+              <Bar dataKey="Qty Ratio" name="Qty Ratio" fill={COLORS.accent} barSize={30} />
+              <Line type="monotone" dataKey="Wgt Ratio" name="Wgt Ratio" stroke={COLORS.primary} strokeWidth={3} dot={{ r: 4 }} />
+              <ReferenceLine y={1} stroke="red" strokeDasharray="3 3" label={{ value: "1.0 Equilibrium", position: 'insideTopRight', fontSize: 10, fill: 'red' }} />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
 
-        <div style={{ height: 200, marginBottom: 20 }}>
-          <ResponsiveContainer>
-            <AreaChart data={filteredPivot.slice(0, 10)} margin={{ left: 60 }}>
-              <CartesianGrid strokeDasharray="3 3"/><XAxis dataKey={pivotBy}/><YAxis tickFormatter={fNum}/><Tooltip formatter={fNum}/><Area type="monotone" dataKey="Leakage Loss" stroke={COLORS.secondary} fill={COLORS.secondary} fillOpacity={0.1}/></AreaChart>
+        {/* Leakage Area Chart */}
+        <div style={{ height: 220, marginBottom: "30px" }}>
+          <h4 style={{ color: "#666", marginBottom: "10px", fontSize: "12px" }}>LEAKAGE LOSS TREND BY {pivotBy.toUpperCase()}</h4>
+          <ResponsiveContainer key={`hub-chart-leak-${pivotBy}-${hubMode}`}>
+            <AreaChart data={filteredPivot.slice(0, 10)} margin={{ left: 40, right: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey={pivotBy} tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={fNum} />
+              <Tooltip formatter={fNum} />
+              <Area type="monotone" dataKey="Leakage Loss" name="Leakage ($)" stroke={COLORS.secondary} fill={COLORS.secondary} fillOpacity={0.15} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        <div style={{ marginTop: 25, padding: 20, background: "#fdfdfd", borderLeft: `5px solid ${COLORS.primary}`, fontSize: 13, lineHeight: 1.6 }}>
+        {/* Audit Guide Footer */}
+        <div style={{ marginTop: "25px", padding: "20px", background: "#fdfdfd", borderLeft: `5px solid ${COLORS.primary}`, fontSize: "13px", lineHeight: "1.6" }}>
           <strong>DETAILED HUB AUDIT GUIDE:</strong><br/>
           • <strong>Ratio = 1.00 (Perfect Transit):</strong> The hub is acting as a pure pass-thru; mass in equals mass out perfectly.<br/>
-          • <strong>Ratio &gt; 1.00 (Value Addition):</strong> Mass has increased during transit. This is expected if packaging or pallets were added at the hub.<br/>
-          • <strong>Ratio &lt; 1.00 (Physical Leakage):</strong> Mass has been lost in transit. Indicates shrinkage, damage, or unrecorded inventory drift.<br/>
-          • <strong>Leakage Value ($):</strong> The financial cost of the units lost between import and export.
+          • <strong>Ratio &gt; 1.00 (Value Addition):</strong> Mass increased during transit. Common if packaging or liquids were added at the hub.<br/>
+          • <strong>Ratio &lt; 1.00 (Physical Leakage):</strong> Mass lost in transit. Indicates shrinkage, damage, or unrecorded inventory drift.<br/>
+          • <strong>Leakage Value ($):</strong> The calculated financial value of the missing throughput based on current price/amount.
         </div>
       </div>
 
@@ -256,6 +464,32 @@ export default function PivotReport({ rows = [], reportName = "Master Trade Hub 
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+
+
+
+      <div data-html2canvas-ignore style={{ 
+        marginTop: "50px", 
+        padding: "20px", 
+        background: "#2d2d2d", 
+        color: "#00ff00", 
+        fontFamily: "monospace", 
+        fontSize: "12px", 
+        borderRadius: "8px",
+        overflow: "auto" 
+      }}>
+        <h3 style={{ color: "#fff", borderBottom: "1px solid #555" }}>🛠 Data Debugger</h3>
+        <div style={{ display: "flex", gap: "20px" }}>
+          <div style={{ flex: 1 }}>
+            <strong>RAW DATA SAMPLE (1st Row):</strong>
+            <pre>{JSON.stringify(rows[0], null, 2)}</pre>
+          </div>
+          <div style={{ flex: 1 }}>
+            <strong>PIVOTED SAMPLE (1st Row):</strong>
+            <pre>{JSON.stringify(filteredPivot[0], null, 2)}</pre>
           </div>
         </div>
       </div>
