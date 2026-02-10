@@ -7,6 +7,7 @@ import {
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
+
 // -------------------- HELPERS --------------------
 function fNum(val) {
   if (val == null || isNaN(val)) return "0.00";
@@ -16,20 +17,24 @@ function fNum(val) {
   });
 }
 
+
 const PIE_COLORS = ["#1d3557", "#e63946", "#457b9d", "#f4a261", "#a8dadc", "#2a9d8f", "#8d99ae", "#52b788", "#b5179e"];
+
 
 export default function PivotReport({ rows = [], reportName = "Master Trade Hub Audit" }) {
   const [pivotBy, setPivotBy] = useState("PRODUCT");
   const [measure, setMeasure] = useState("Amount($)");
   const [editableTitle, setEditableTitle] = useState(reportName);
-  const [selectedItems, setSelectedItems] = useState([]); 
+  const [selectedItems, setSelectedItems] = useState([]);
   const [logo, setLogo] = useState(null);
   const [showLogo, setShowLogo] = useState(true);
-  
+ 
   const p1 = useRef(null); const p2 = useRef(null); const p3 = useRef(null);
   const fileInputRef = useRef(null);
 
+
   const COLORS = { primary: "#1d3557", secondary: "#e63946", accent: "#f4a261", highlight: "#e0f7fa", footer: "#f1f3f5", warning: "#fff3e0" };
+
 
   // 1. Build Base Pivot Data
 const allPivotData = useMemo(() => {
@@ -39,11 +44,12 @@ const allPivotData = useMemo(() => {
       if (!pivotMap[key]) {
         pivotMap[key] = { [pivotBy]: key, Export: 0, Import: 0, ExpQty: 0, ImpQty: 0, ExpWgt: 0, ImpWgt: 0 };
       }
-      
+     
       const type = r.Type?.toLowerCase() === "export" ? "Export" : "Import";
       const val = Number(r[measure] || 0);
       const q = Number(r["Quantity"] || 0);
       const w = Number(r["Weight(Kg)"] || 0);
+
 
       pivotMap[key][type] += val;
       if (type === "Export") {
@@ -55,22 +61,25 @@ const allPivotData = useMemo(() => {
       }
     });
 
+
     return Object.values(pivotMap).map(r => {
       const grandTotal = r.Export + r.Import;
-      
-      // Calculate Ratio: If it's a destination, we show it as 100% pass-thru 
+     
+      // Calculate Ratio: If it's a destination, we show it as 100% pass-thru
       // of its own value to ensure the line chart has data points.
       const wgtRatio = r.ImpWgt > 0 ? (r.ExpWgt / r.ImpWgt) : (r.ExpWgt > 0 ? 1 : 0);
       const qtyRatio = r.ImpQty > 0 ? (r.ExpQty / r.ImpQty) : (r.ExpQty > 0 ? 1 : 0);
-      
+     
       // Difference: Total value gap for that specific entity
       const diff = Math.abs(r.Export - r.Import);
+
 
       // Leakage: Only calculated if there's an import to lose from
       let leakageLoss = 0;
       if (r.Import > 0 && r.Export < r.Import) {
         leakageLoss = r.Import - r.Export;
       }
+
 
       return {
         ...r,
@@ -86,20 +95,33 @@ const allPivotData = useMemo(() => {
     }).sort((a, b) => b.Export - a.Export);
   }, [rows, pivotBy, measure]);
 
-const [hubMode, setHubMode] = useState(false);
 
+const [hubMode, setHubMode] = useState(false);
+const [searchTerm, setSearchTerm] = useState("");
 const filteredPivot = useMemo(() => {
-    let data = selectedItems.length === 0 
-      ? allPivotData 
+    let data = selectedItems.length === 0
+      ? allPivotData
       : allPivotData.filter(item => selectedItems.includes(item[pivotBy]));
 
+
     if (hubMode) {
-      // Hub Mode: Only show items that have BOTH Import and Export records
       data = data.filter(item => item.Import > 0 && item.Export > 0);
     }
 
+
+    // NEW: Filter by Search Term
+    if (searchTerm) {
+      data = data.filter(item =>
+        item[pivotBy].toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+
     return data;
-  }, [allPivotData, selectedItems, pivotBy, hubMode]);
+  }, [allPivotData, selectedItems, pivotBy, hubMode, searchTerm]);
+
+
+
 
 const grandTotals = useMemo(() => {
     // 1. Sum raw numeric values across all pivoted rows
@@ -111,12 +133,14 @@ const grandTotals = useMemo(() => {
       LeakageLoss: acc.LeakageLoss + (Number(curr["Leakage Loss"]) || 0)
     }), { Export: 0, Import: 0, ExpWgt: 0, ImpWgt: 0, LeakageLoss: 0 });
 
+
     const totalSystemValue = totals.Export + totals.Import;
-    
+   
     // 2. Calculate the system-wide percentages
     // We use these specific keys to match what the table footer expects
     const impPercent = totalSystemValue > 0 ? (totals.Import / totalSystemValue) * 100 : 0;
     const expPercent = totalSystemValue > 0 ? (totals.Export / totalSystemValue) * 100 : 0;
+
 
     return {
       ...totals,
@@ -127,6 +151,7 @@ const grandTotals = useMemo(() => {
       systemWgtRatio: totals.ImpWgt > 0 ? (totals.ExpWgt / totals.ImpWgt) : (totals.ExpWgt > 0 ? 1 : 0)
     };
   }, [filteredPivot]);
+
 
   const exportCSV = () => {
     const headers = [pivotBy, "Export", "Import", "Difference", "Imp %", "Exp %", "Qty Ratio", "Wgt Ratio", "Leakage Loss"];
@@ -140,6 +165,7 @@ const grandTotals = useMemo(() => {
     link.click();
   };
 
+
   const exportPDF = async () => {
     const pdf = new jsPDF("p", "mm", "a4");
     const refs = [p1, p2, p3];
@@ -151,16 +177,17 @@ const grandTotals = useMemo(() => {
     pdf.save(`${editableTitle}.pdf`);
   };
 
+
   return (
     <div style={{ padding: "20px", background: "#f8f9fa" }}>
-      
+     
       {/* PAGE 1: CORE DATA & TABLE */}
       <div ref={p1} style={{ background: "#fff", padding: "50px", marginBottom: "30px", border: "1px solid #ddd" }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           {showLogo && logo && <img src={logo} style={{ maxHeight: 60 }} alt="logo" />}
           <h1 contentEditable style={{ color: COLORS.primary, flex: 1, marginLeft: logo ? 20 : 0 }}>{editableTitle}</h1>
         </div>
-        
+       
         <div data-html2canvas-ignore style={{ display: "flex", flexWrap: 'wrap', gap: 15, margin: "20px 0", padding: "15px", background: "#eee", borderRadius: 8 }}>
           <select value={pivotBy} onChange={e => {setPivotBy(e.target.value); setSelectedItems([]);}}><option value="PRODUCT">PRODUCT</option><option value="Country">Country</option></select>
           <select value={measure} onChange={e => setMeasure(e.target.value)}><option value="Amount($)">Amount ($)</option><option value="Weight(Kg)">Weight (Kg)</option><option value="Quantity">Quantity</option></select>
@@ -170,15 +197,22 @@ const grandTotals = useMemo(() => {
           <button onClick={() => setSelectedItems([])}>Clear Filter</button>
           <button onClick={exportCSV} style={{ background: '#2a9d8f', color: '#fff' }}>Export CSV</button>
           <button onClick={exportPDF} style={{ background: COLORS.primary, color: "#fff" }}>Download PDF</button>
-          <button 
-  onClick={() => setHubMode(!hubMode)} 
+          <button
+  onClick={() => setHubMode(!hubMode)}
   style={{ background: hubMode ? COLORS.primary : "#ccc", color: "#fff" }}
 >
   {hubMode ? "Showing: Hubs Only" : "Showing: All Trade"}
 </button>
         </div>
 
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+
+      <table style={{
+  width: "100%",
+  tableLayout: "fixed", // This is key to forcing the width percentages to work
+  borderCollapse: "collapse",
+  fontSize: "14px",
+  marginBottom: "40px"
+}}>
           <thead>
             <tr style={{ background: COLORS.primary, color: "#fff" }}>
               <th style={{ textAlign: "left", padding: "12px" }}>Select</th>
@@ -221,6 +255,7 @@ const grandTotals = useMemo(() => {
           </tfoot>
         </table>
 
+
         <div style={{ height: 250, marginTop: 40 }}>
           <ResponsiveContainer><BarChart data={filteredPivot.slice(0, 10)} margin={{ left: 60 }}><XAxis dataKey={pivotBy}/><YAxis tickFormatter={fNum}/><Tooltip formatter={fNum}/><Legend/><Bar dataKey="Export" fill={COLORS.primary}/><Bar dataKey="Import" fill={COLORS.secondary}/></BarChart></ResponsiveContainer>
         </div>
@@ -229,18 +264,19 @@ const grandTotals = useMemo(() => {
         </div>
       </div>
 
+
 {/* PAGE 2: HUB ANALYSIS */}
 <div ref={p2} style={{ background: "#fff", padding: "50px", border: "1px solid #ddd" }}>
-  
+ 
   {/* --- SYSTEM BALANCE BAR --- */}
-  <div style={{ 
-    background: grandTotals.systemWgtRatio > 0.95 && grandTotals.systemWgtRatio < 1.05 ? "#2a9d8f" : COLORS.secondary, 
-    color: '#fff', padding: '15px 25px', borderRadius: '8px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' 
+  <div style={{
+    background: grandTotals.systemWgtRatio > 0.95 && grandTotals.systemWgtRatio < 1.05 ? "#2a9d8f" : COLORS.secondary,
+    color: '#fff', padding: '15px 25px', borderRadius: '8px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between'
   }}>
     <div>
       <span style={{ fontSize: '10px', textTransform: 'uppercase' }}>System Mass Balance (Source vs Global)</span>
       <div style={{ fontSize: '22px', fontWeight: 'bold' }}>
-        {fNum(grandTotals.systemWgtRatio)}x 
+        {fNum(grandTotals.systemWgtRatio)}x
         <span style={{ fontSize: '12px', marginLeft: '10px', fontWeight: 'normal' }}>
           {grandTotals.systemWgtRatio >= 1 ? "(Surplus/Value Add)" : "(System Leakage)"}
         </span>
@@ -253,16 +289,16 @@ const grandTotals = useMemo(() => {
       </div>
     </div>
   </div>
-<div style={{ 
-  padding: '10px 20px', 
-  borderRadius: '4px', 
+<div style={{
+  padding: '10px 20px',
+  borderRadius: '4px',
   background: grandTotals.systemWgtRatio === 1 ? '#e6fffa' : '#fff5f5',
   border: `1px solid ${grandTotals.systemWgtRatio === 1 ? '#38b2ac' : '#feb2b2'}`,
   marginBottom: '20px',
   fontSize: '13px'
 }}>
-  <strong>System Balance Check:</strong> {grandTotals.systemWgtRatio === 1 
-    ? "✅ Total destination weight perfectly matches source weight." 
+  <strong>System Balance Check:</strong> {grandTotals.systemWgtRatio === 1
+    ? "✅ Total destination weight perfectly matches source weight."
     : `⚠️ Discrepancy detected: System is operating at ${fNum(grandTotals.systemWgtRatio)}x capacity.`}
 </div>
   {/* Metric Cards - Fixed to show 1.00x if system is balanced */}
@@ -271,16 +307,28 @@ const grandTotals = useMemo(() => {
        <strong>Global Weight Pass-thru</strong>
        <div style={{ fontSize: "24px" }}>{fNum(grandTotals.systemWgtRatio)}x</div>
      </div>
-     <div style={{ flex: 1, textAlign: "center", color: COLORS.secondary }}>
-       <strong>Financial Leakage</strong>
-       <div style={{ fontSize: "24px" }}>${fNum(grandTotals.Leakage)}</div>
-     </div>
+  <div style={{ flex: 1, textAlign: "center", color: COLORS.secondary }}>
+  {/* Dynamic Label: Changes from 'Financial' to 'Mass' or 'Quantity' */}
+  <strong>
+    {measure === "Amount($)" ? "Financial Leakage" :
+     measure === "Weight(Kg)" ? "Mass Leakage" : "Qty Leakage"}
+  </strong>
+ 
+  <div style={{ fontSize: "24px" }}>
+    {/* Dynamic Symbol/Suffix */}
+    {measure === "Amount($)" && "$"}
+    {fNum(grandTotals.LeakageLoss)}
+    {measure === "Weight(Kg)" && " Kg"}
+    {measure === "Quantity" && " units"}
   </div>
+</div>
+  </div>
+
 
      {/* Header with Tooltip Pop-up */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h2 style={{ color: COLORS.primary, margin: 0 }}>HUB THROUGHPUT & AUDIT INTERPRETATION</h2>
-          <button 
+          <button
             onClick={() => alert(
               "HUB ANALYSIS CALCULATIONS:\n\n" +
               "1. PASS-THRU RATIO (Qty/Wgt):\n" +
@@ -292,14 +340,14 @@ const grandTotals = useMemo(() => {
               "3. ORIGIN ONLY:\n" +
               "Indicates the entity is the primary source; no Import records exist for this item."
             )}
-            style={{ 
-              background: COLORS.accent, 
-              border: 'none', 
-              borderRadius: '50%', 
-              width: "28px", 
-              height: "28px", 
-              cursor: 'help', 
-              color: '#fff', 
+            style={{
+              background: COLORS.accent,
+              border: 'none',
+              borderRadius: '50%',
+              width: "28px",
+              height: "28px",
+              cursor: 'help',
+              color: '#fff',
               fontWeight: 'bold',
               display: 'flex',
               alignItems: 'center',
@@ -310,12 +358,20 @@ const grandTotals = useMemo(() => {
           </button>
         </div>
 
+
       {/* --- EXECUTIVE SUMMARY BAR --- */}
         <div style={{ background: COLORS.primary, color: '#fff', padding: '20px 30px', borderRadius: '8px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <span style={{ opacity: 0.8, fontSize: '12px', letterSpacing: '1px' }}>TOTAL SYSTEM LEAKAGE (FINANCIAL RISK)</span>
-            <div style={{ fontSize: '28px', fontWeight: 'bold' }}>${fNum(grandTotals.LeakageLoss)}</div>
-          </div>
+ <div>
+  <span style={{ opacity: 0.8, fontSize: '12px', letterSpacing: '1px' }}>
+    TOTAL SYSTEM LEAKAGE ({measure.toUpperCase()})
+  </span>
+  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+    {measure === "Amount($)" && `$`}
+    {fNum(grandTotals.LeakageLoss)}
+    {measure === "Weight(Kg)" && ` Kg`}
+    {measure === "Quantity" && ` units`}
+  </div>
+</div>
           <div style={{ height: '40px', width: '1px', background: 'rgba(255,255,255,0.3)' }}></div>
           <div style={{ textAlign: 'right' }}>
             <span style={{ opacity: 0.8, fontSize: '12px', letterSpacing: '1px' }}>AVG SYSTEM WEIGHT PASS-THRU</span>
@@ -325,6 +381,7 @@ const grandTotals = useMemo(() => {
             </div>
           </div>
         </div>
+
 
         {/* Secondary Metric Cards */}
         <div style={{ display: "flex", gap: "20px", background: COLORS.footer, padding: "25px", marginBottom: "30px", borderRadius: "8px" }}>
@@ -342,55 +399,94 @@ const grandTotals = useMemo(() => {
            </div>
         </div>
 
+
   {/* Data Table */}
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", marginBottom: "40px" }}>
+{/* --- SEARCH BOX --- */}
+        <div style={{ marginBottom: '20px' }}>
+          <input
+            type="text"
+            placeholder={`Search ${pivotBy}...`}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              padding: '10px', width: '100%', maxWidth: '400px',
+              borderRadius: '6px', border: '1px solid #ced4da', fontSize: '14px'
+            }}
+          />
+        </div>
+
+
+        {/* --- HUB ANALYSIS TABLE --- */}
+        <table style={{
+          width: "100%", tableLayout: "fixed", borderCollapse: "collapse",
+          fontSize: "13px", border: "1px solid #dee2e6"
+        }}>
+          <colgroup>
+            <col style={{ width: '35%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '25%' }} />
+          </colgroup>
+
+
           <thead>
             <tr style={{ background: "#457b9d", color: "#fff" }}>
               <th style={{ textAlign: "left", padding: "12px" }}>{pivotBy.toUpperCase()}</th>
               <th style={{ textAlign: "right", padding: "12px" }}>Flow Type</th>
               <th style={{ textAlign: "right", padding: "12px" }}>Wgt Ratio</th>
-              <th style={{ textAlign: "right", padding: "12px" }}>Leakage ({measure})</th>
+              <th style={{ textAlign: "right", padding: "12px" }}>
+                Leakage ({measure === "Amount($)" ? "$" : measure === "Weight(Kg)" ? "Kg" : "Units"})
+              </th>
             </tr>
           </thead>
+
+
           <tbody>
             {filteredPivot.map((r, i) => {
-              // 1. Label Logic
+              const hasImport = r.Import > 0;
+              const hasExport = r.Export > 0;
+             
               let flowLabel = "";
               if (pivotBy === "PRODUCT") {
-                if (r.Import > 0 && r.Export > 0) flowLabel = "Active Trade";
-                else if (r.Import > 0 && r.Export === 0) flowLabel = "Stock Piling";
-                else if (r.Export > 0 && r.Import === 0) flowLabel = "Outbound Only";
+                if (hasImport && hasExport) flowLabel = "Active Trade";
+                else if (hasImport) flowLabel = "Stock Piling";
+                else if (hasExport) flowLabel = "Outbound Only";
+                else flowLabel = "Inert / No Trade";
               } else {
-                if (r.Import > 0 && r.Export > 0) flowLabel = "Transit Hub";
-                else if (r.Import > 0 && r.Export === 0) flowLabel = "Source (China)";
-                else if (r.Export > 0 && r.Import === 0) flowLabel = "Destination Market";
+                if (hasImport && hasExport) flowLabel = "Transit Hub";
+                else if (hasImport) flowLabel = "Source (China)";
+                else if (hasExport) flowLabel = "Destination Market";
+                else flowLabel = "Inert";
               }
 
-              // 2. Row Rendering
+
               return (
-                <tr key={`hub-row-${pivotBy}-${i}`} style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={{ padding: "12px", fontWeight: "bold" }}>{r[pivotBy]}</td>
-                  <td style={{ textAlign: "right", padding: "12px", color: "#666" }}>{flowLabel}</td>
-                  <td style={{ textAlign: "right", padding: "12px" }}>
-                    {r.ImpWgt > 0 ? `${fNum(r["Wgt Ratio"])}x` : "1.00x (Source)"}
+                <tr key={`hub-row-${i}`} style={{ borderBottom: "1px solid #eee" }}>
+                  <td style={{
+                    padding: "10px", fontWeight: "bold", whiteSpace: "nowrap",
+                    overflow: "hidden", textOverflow: "ellipsis"
+                  }} title={r[pivotBy]}>
+                    {r[pivotBy]}
                   </td>
-                  <td style={{ 
-  textAlign: "right", 
-  padding: "12px", 
-  color: r["Leakage Loss"] > 0 ? COLORS.secondary : "inherit",
-  fontWeight: r["Leakage Loss"] > 0 ? "bold" : "normal"
-}}>
-  {measure === "Amount($)" && `$`}
-  {fNum(r["Leakage Loss"])}
-  {measure === "Weight(Kg)" && ` Kg`}
-  {measure === "Quantity" && ` units`}
-</td>
+                  <td style={{ textAlign: "right", padding: "10px", color: "#666" }}>{flowLabel}</td>
+                  <td style={{ textAlign: "right", padding: "10px" }}>
+                    {!hasImport && !hasExport ? "0.00x" : r.ImpWgt > 0 ? `${fNum(r["Wgt Ratio"])}x` : "1.00x (Source)"}
+                  </td>
+                  <td style={{
+                    textAlign: "right", padding: "10px",
+                    color: r["Leakage Loss"] > 0 ? COLORS.secondary : "inherit",
+                    background: r["Leakage Loss"] > 0 ? "#fff5f5" : "transparent"
+                  }}>
+                    {measure === "Amount($)" && "$"}
+                    {fNum(r["Leakage Loss"])}
+                    {measure === "Weight(Kg)" && " Kg"}
+                    {measure === "Quantity" && " Units"}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-
         {/* Comparison Chart */}
         <div style={{ height: 320, marginBottom: "40px" }}>
           <h4 style={{ color: "#666", marginBottom: "10px", fontSize: "12px" }}>TOP 10 HUB THROUGHPUT RATIOS</h4>
@@ -407,6 +503,7 @@ const grandTotals = useMemo(() => {
           </ResponsiveContainer>
         </div>
 
+
         {/* Leakage Area Chart */}
         <div style={{ height: 220, marginBottom: "30px" }}>
           <h4 style={{ color: "#666", marginBottom: "10px", fontSize: "12px" }}>LEAKAGE LOSS TREND BY {pivotBy.toUpperCase()}</h4>
@@ -421,6 +518,7 @@ const grandTotals = useMemo(() => {
           </ResponsiveContainer>
         </div>
 
+
         {/* Audit Guide Footer */}
         <div style={{ marginTop: "25px", padding: "20px", background: "#fdfdfd", borderLeft: `5px solid ${COLORS.primary}`, fontSize: "13px", lineHeight: "1.6" }}>
           <strong>DETAILED HUB AUDIT GUIDE:</strong><br/>
@@ -431,68 +529,105 @@ const grandTotals = useMemo(() => {
         </div>
       </div>
 
-      {/* PAGE 3: PIE CHART & ANOMALIES */}
-      <div ref={p3} style={{ background: "#fff", padding: "50px", border: "1px solid #ddd" }}>
-        <h2 style={{ color: COLORS.secondary }}>MARKET SHARE & ANOMALY ANALYSIS</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 30 }}>
-          <div style={{ height: 500 }}>
-            <h4 style={{textAlign:'center', marginBottom: 10}}>Dominance by {measure}</h4>
-            <ResponsiveContainer>
-              <PieChart margin={{ bottom: 40 }}>
-                <Pie data={filteredPivot} dataKey="Export" nameKey={pivotBy} cx="50%" cy="40%" outerRadius={90} labelLine label={({name, percent}) => `${name.substring(0,8)} (${(percent*100).toFixed(0)}%)`}>
-                  {filteredPivot.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={fNum}/>
-                <Legend verticalAlign="bottom" align="center" layout="horizontal" wrapperStyle={{ fontSize: '10px', bottom: 10 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div>
-            <h4 style={{color: COLORS.secondary}}>Anomaly & Risk Detection Guide</h4>
-            <div style={{fontSize: 12, background: COLORS.warning, padding: 15, borderRadius: 8, lineHeight: 1.6}}>
-              <strong>Red Flag Threshold:</strong> Items below 0.85x ratio (15% loss) represent severe risk outliers requiring audit.
+
+ {/* --- MARKET SHARE & ANOMALY ANALYSIS --- */}
+<div className="market-analysis-wrapper">
+  <h3 style={{ color: COLORS.primary, marginTop: "40px", marginBottom: "20px" }}>
+    MARKET SHARE & ANOMALY ANALYSIS
+  </h3>
+
+
+  {/* TOP ROW: Flex container for Chart and Table */}
+  <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start', marginBottom: '30px' }}>
+   
+    {/* Left: Distribution Dominance */}
+    <div style={{ flex: '1' }}>
+      <h4 style={{ color: "#666", fontSize: "12px", marginBottom: '15px' }}>
+        DISTRIBUTION DOMINANCE ({measure})
+      </h4>
+      {filteredPivot.sort((a, b) => (b.Export || 0) - (a.Export || 0)).slice(0, 5).map((item, idx) => {
+        const percentage = grandTotals.Export > 0 ? ((item.Export / grandTotals.Export) * 100).toFixed(1) : 0;
+        return (
+          <div key={`share-${idx}`} style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
+              <span style={{ fontWeight: 'bold' }}>{item[pivotBy]}</span>
+              <span>{percentage}%</span>
             </div>
-            <table style={{width:'100%', fontSize: 13, borderCollapse:'collapse', marginTop: 15}}>
-              <thead>
-                <tr style={{background:COLORS.secondary, color:'#fff'}}><th style={{padding:8, textAlign:'left'}}>Outlier Item</th><th style={{padding:8, textAlign:'right'}}>Ratio</th></tr>
-              </thead>
-              <tbody>
-                {filteredPivot.filter(r => r["Is Anomaly"]).map((r, i) => (
-                  <tr key={i} style={{background: '#fff3f3', borderBottom:'1px solid #ddd'}}>
-                    <td style={{padding:8}}>{r[pivotBy]}</td><td style={{padding:8, textAlign:'right'}}>{fNum(r["Wgt Ratio"])}x</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ width: '100%', height: '6px', background: '#eee', borderRadius: '3px' }}>
+              <div style={{ width: `${percentage}%`, height: '100%', background: '#1b3a5d', borderRadius: '3px' }}></div>
+            </div>
           </div>
-        </div>
-      </div>
-
-
-
-
-      <div data-html2canvas-ignore style={{ 
-        marginTop: "50px", 
-        padding: "20px", 
-        background: "#2d2d2d", 
-        color: "#00ff00", 
-        fontFamily: "monospace", 
-        fontSize: "12px", 
-        borderRadius: "8px",
-        overflow: "auto" 
-      }}>
-        <h3 style={{ color: "#fff", borderBottom: "1px solid #555" }}>🛠 Data Debugger</h3>
-        <div style={{ display: "flex", gap: "20px" }}>
-          <div style={{ flex: 1 }}>
-            <strong>RAW DATA SAMPLE (1st Row):</strong>
-            <pre>{JSON.stringify(rows[0], null, 2)}</pre>
-          </div>
-          <div style={{ flex: 1 }}>
-            <strong>PIVOTED SAMPLE (1st Row):</strong>
-            <pre>{JSON.stringify(filteredPivot[0], null, 2)}</pre>
-          </div>
-        </div>
-      </div>
+        );
+      })}
     </div>
+
+
+    {/* Right: Anomaly Table */}
+    <div style={{ flex: '1.5' }}>
+      <div style={{ background: '#fff9db', padding: '10px', borderRadius: '6px', border: '1px solid #ffec99', marginBottom: '10px' }}>
+        <small style={{ color: '#856404' }}>⚠️ <strong>Audit Alert Thresholds:</strong> Flagging Ratios &gt; 1.15x (Surplus) or &lt; 0.85x (Deficit).</small>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+        <thead>
+          <tr style={{ background: '#e63946', color: '#fff' }}>
+            <th style={{ textAlign: 'left', padding: '8px' }}>Flagged Item</th>
+            <th style={{ textAlign: 'right', padding: '8px' }}>Ratio</th>
+            <th style={{ textAlign: 'right', padding: '8px' }}>Impact ({measure})</th>
+            <th style={{ textAlign: 'right', padding: '8px' }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredPivot
+            .filter(r => r["Wgt Ratio"] > 1.15 || (r["Wgt Ratio"] < 0.85 && r.Import > 0))
+            .map((r, idx) => (
+              <tr key={`anomaly-${idx}`} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '8px', fontWeight: 'bold' }}>{r[pivotBy]}</td>
+                <td style={{ textAlign: 'right', padding: '8px' }}>{fNum(r["Wgt Ratio"])}x</td>
+                <td style={{ textAlign: 'right', padding: '8px' }}>
+                  {measure === "Amount($)" && "$"}
+                  {fNum(r["Leakage Loss"])}
+                  {measure === "Weight(Kg)" && " Kg"}
+                </td>
+                <td style={{ textAlign: 'right', padding: '8px', fontWeight: 'bold', color: r["Wgt Ratio"] > 1 ? '#e67e22' : '#e63946' }}>
+                  {r["Wgt Ratio"] > 1 ? 'SURPLUS' : 'DEFICIT'}
+                </td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+ {/* --- BOTTOM ROW: Audit Interpretation Guide --- */}
+  <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '12px', border: '1px solid #dee2e6' }}>
+    <h4 style={{ margin: '0 0 15px 0', fontSize: '14px', color: '#1b3a5d' }}>AUDIT INTERPRETATION GUIDE</h4>
+    <div style={{ display: 'flex', gap: '40px' }}>
+      <div style={{ flex: 1 }}>
+        <strong style={{ color: '#e67e22', display: 'block', fontSize: '13px' }}>📈 SURPLUS (Ratio &gt; 1.15x)</strong>
+        <p style={{ fontSize: '12px', color: '#666', lineHeight: '1.4' }}>
+          <strong>Definition:</strong> System exports exceed recorded imports.
+          <ul style={{ paddingLeft: '15px', marginTop: '5px' }}>
+            <li>Unrecorded Import containers.</li>
+            <li>Blending with local materials.</li>
+            <li>Unit mismatches (Tons vs Kg).</li>
+          </ul>
+        </p>
+      </div>
+      <div style={{ flex: 1 }}>
+        <strong style={{ color: '#e63946', display: 'block', fontSize: '13px' }}>📉 DEFICIT (Ratio &lt; 0.85x)</strong>
+        <p style={{ fontSize: '12px', color: '#666', lineHeight: '1.4' }}>
+          <strong>Definition:</strong> Material entered the hub but never left.
+          <ul style={{ paddingLeft: '15px', marginTop: '5px' }}>
+            <li><strong>Stock Piling:</strong> Inventory sitting in warehouse.</li>
+            <li><strong>Theft/Loss:</strong> Physical removal without sales.</li>
+            <li><strong>Waste:</strong> Material lost during handling.</li>
+          </ul>
+        </p>
+      </div>
+    </div> {/* Closes inner flex */}
+  </div> {/* Closes gray background guide */}
+</div> {/* Closes the main "market-analysis-wrapper" div */}        
+      </div>
   );
 }
