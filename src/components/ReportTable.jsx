@@ -220,9 +220,8 @@ export default function ReportTable({ report, onBack }) {
   }}
 >
   {(activeTab === "Charts" || activeTab === "Combined") && (
-<ChartDashboard 
-  rows={rows} 
-  filteredRows={filteredRows} 
+<ChartDashboard
+  data={filteredRows.length ? filteredRows : rows}
 />
   )}
 </div>

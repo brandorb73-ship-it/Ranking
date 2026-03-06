@@ -10,41 +10,65 @@ const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
 
 
-export default function ChartDashboard(props) {
-  const { rows, filteredRows } = props; // This extracts your data from props
+export default function ChartDashboard({ data }) {
+
   const [basis, setBasis] = useState("Amount");
   const [hoveredEntity, setHoveredEntity] = useState(null);
- 
-  const data = filteredRows.length > 0 ? filteredRows : rows;
 
+  const safeData = Array.isArray(data) ? data : [];
 
-  const processedData = useMemo(() => {
-    if (!data || data.length === 0) return [];
-    const basisKey = Object.keys(data[0]).find(k =>
-      k.toLowerCase().includes(basis.toLowerCase().substring(0,3))
-    ) || "Amount";
+  if (!safeData.length) {
+    return <div style={{padding:40}}>No chart data detected</div>;
+  }
 
+  const headers = Object.keys(safeData[0]);
 
-    const vals = data.map(r => Number(r[basisKey] || 0)).sort((a, b) => a - b);
-    const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
-    const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
-   
-    return data.map(r => {
-      const val = Number(r[basisKey] || 0);
-      const risk = val >= p90 ? "high" : (val >= p70 ? "med" : "low");
-      const txnKey = Object.keys(r).find(k => /transaction|txn|count/i.test(k)) || "Transactions";
-     
-      return {
-        ...r,
-        _risk: risk,
-        _basisVal: val,
-        _txns: Number(r[txnKey] || 0),
-        x: Number(r.Weight || r["Weight(Kg)"] || 0),
-        y: Number(r.Amount || r["Amount($)"] || 0)
-      };
-    });
-  }, [data, basis]);
+  function detectColumn(keys, patterns) {
+    return keys.find(k =>
+      patterns.some(p => new RegExp(p,"i").test(k))
+    );
+  }
 
+  const nameKey =
+    detectColumn(headers, ["importer","consignee"]) ||
+    detectColumn(headers, ["exporter","shipper","seller"]) ||
+    detectColumn(headers, ["company","entity","name"]);
+
+  const txnKey =
+    detectColumn(headers, ["transaction","txn","count"]);
+
+  const weightKey =
+    detectColumn(headers, ["weight","kg"]);
+
+  const amountKey =
+    detectColumn(headers, ["amount","value","usd","\\$"]);
+
+  const qtyKey =
+    detectColumn(headers, ["qty","quantity"]);
+
+const processedData = useMemo(() => {
+
+  const metricKey =
+    basis === "Amount" ? amountKey :
+    basis === "Weight" ? weightKey :
+    qtyKey;
+
+  return safeData.map((r,i)=>{
+
+    const label = r[nameKey] || r._label || "Unknown";
+
+    return {
+      ...r,
+      _label: label,
+      _txns: Number(r[txnKey] || 0),
+      x: Number(r[weightKey] || 0),
+      y: Number(r[amountKey] || 0),
+      metric: Number(r[metricKey] || 0)
+    };
+
+  });
+
+}, [safeData, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
