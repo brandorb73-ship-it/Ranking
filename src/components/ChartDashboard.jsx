@@ -39,30 +39,51 @@ export default function ChartDashboard(props) {
   const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
   
   return data.map(r => {
-    const amt = Number(r[amountKey] || 0);
-    const wgt = Number(r[weightKey] || 0);
-    const txs = Number(r.Transactions || r[txnKey] || 0);
-    const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
-    
-    const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
+
+  const amt = Number(r["Amount($)"] || 0);
+  const wgt = Number(r["Weight(Kg)"] || 0);
+  const txs = Number(r["Transactions"] || 0);
+
+  const currentVal =
+    basis === "Weight"
+      ? wgt
+      : basis === "Transactions"
+      ? txs
+      : amt;
+
+  const risk =
+    currentVal >= p90
+      ? "high"
+      : currentVal >= p70
+      ? "med"
+      : "low";
+
   const label =
     r._label ||
-    r[props.nameKey] ||
     r.Exporter ||
     r.Importer ||
     "Unknown";
+
+const columnMap = {
+  exporter: "Exporter",
+  importer: "Importer",
+  weight: "Weight(Kg)",
+  amount: "Amount($)",
+  transactions: "Transactions"
+};
     
-    return {
+return {
       ...r,
-      // FIX: This ensures the chart picks up "Exporter Name" or "Importer Name"
       _label: label,
       _risk: risk,
       _basisVal: currentVal,
-      _txns: txs, 
-      x: wgt, 
+      _txns: txs,
+      x: wgt,
       y: amt
     };
+
   });
+
 }, [data, basis]);
 
   const countryVolume = useMemo(() => {
@@ -261,7 +282,7 @@ export default function ChartDashboard(props) {
               <Legend verticalAlign="bottom" height={36}/>
             </PieChart>
           </ResponsiveContainer>
-        </div>
+          </div>
       </div>
     </div>
   );
