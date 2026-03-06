@@ -41,15 +41,21 @@ export default function ChartDashboard(props) {
   return data.map(r => {
     const amt = Number(r[amountKey] || 0);
     const wgt = Number(r[weightKey] || 0);
-    const txs = Number(r[txnKey] || 0);
+    const txs = Number(r.Transactions || r[txnKey] || 0);
     const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
     
     const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
+  const label =
+    r._label ||
+    r[props.nameKey] ||
+    r.Exporter ||
+    r.Importer ||
+    "Unknown";
     
     return {
       ...r,
       // FIX: This ensures the chart picks up "Exporter Name" or "Importer Name"
-      _label: r[entityKey] || r._label || "Unknown Entity", 
+      _label: label,
       _risk: risk,
       _basisVal: currentVal,
       _txns: txs, 

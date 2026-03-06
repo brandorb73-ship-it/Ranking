@@ -220,7 +220,11 @@ export default function ReportTable({ report, onBack }) {
   }}
 >
   {(activeTab === "Charts" || activeTab === "Combined") && (
-    <ChartDashboard rows={rows} filteredRows={filteredRows} />
+   <ChartDashboard
+  rows={rows}
+  filteredRows={filteredRows}
+  nameKey={columnHeaders.find(h => /importer|exporter/i.test(h))}
+/>
   )}
 </div>
 
