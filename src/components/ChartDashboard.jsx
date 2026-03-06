@@ -12,63 +12,47 @@ const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
 
 
 export default function ChartDashboard(props) {
-  const { rows, filteredRows } = props; // This extracts your data from props
+  const { rows, filteredRows } = props; // rows must be an array, filteredRows can be []
+
   const [basis, setBasis] = useState("Amount");
   const [hoveredEntity, setHoveredEntity] = useState(null);
- 
+
+  // ✅ data must be defined BEFORE useMemo
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
- const processedData = useMemo(() => {
-  if (!data || data.length === 0) return [];
+  const processedData = useMemo(() => {
+    if (!data || data.length === 0) return [];
 
-  // 1. Map the EXACT column names from your data
-  const amountKey = "Amount($)";
-  const weightKey = "Weight(Kg)";
-  const txnKey = "Transactions";
-  
-  // 2. Identify the Entity Column (Exporter or Importer)
-  // We check the keys of the first row to see which one exists
-  const firstRowKeys = Object.keys(data[0]);
-  const entityKey = firstRowKeys.find(k => k === "Exporter" || k === "Importer") || "_label";
+    // Your mapping logic here...
+    return data.map(r => {
+      const amt = Number(r["Amount($)"] || 0);
+      const wgt = Number(r["Weight(Kg)"] || 0);
+      const txs = Number(r["Transactions"] || 0);
 
-  // 3. Determine the "Basis" (what are we ranking by right now?)
-  const activeKey = basis === "Weight" ? weightKey : (basis === "Transactions" ? txnKey : amountKey);
+      const currentVal =
+        basis === "Weight" ? wgt
+          : basis === "Transactions" ? txs
+          : amt;
 
-  // 4. Calculate Risk Percentiles
-  const vals = data.map(r => Number(r[activeKey] || 0)).sort((a, b) => a - b);
-  const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
-  const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
-  
-  return data.map(r => {
-  // Use cleaned & normalized fields from ReportTable
-  const amt = Number(r["Amount($)"] || 0);
-  const wgt = Number(r["Weight(Kg)"] || 0);
-  const txs = Number(r["Transactions"] || 0);
+      const risk =
+        currentVal >= p90 ? "high"
+          : currentVal >= p70 ? "med"
+          : "low";
 
-  const currentVal =
-    basis === "Weight" ? wgt
-      : basis === "Transactions" ? txs
-      : amt;
+      const label =
+        r._label || r.Exporter || r.Importer || "Unknown";
 
-  const risk =
-    currentVal >= p90 ? "high"
-      : currentVal >= p70 ? "med"
-      : "low";
-
-  const label =
-    r._label || r.Exporter || r.Importer || "Unknown";
-
-  return {
-    ...r,
-    _label: label,
-    _risk: risk,
-    _basisVal: currentVal,
-    _txns: txs,
-    x: wgt,
-    y: amt
-  };
-});
-}, [data, basis])
+      return {
+        ...r,
+        _label: label,
+        _risk: risk,
+        _basisVal: currentVal,
+        _txns: txs,
+        x: wgt,
+        y: amt
+      };
+    });
+  }, [data, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
