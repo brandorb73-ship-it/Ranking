@@ -17,60 +17,43 @@ export default function ChartDashboard(props) {
  
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
-const normalizedRows = useMemo(() => {
-  if (!data?.length) return [];
-
-  const num = v => Number(String(v || 0).replace(/,/g, ""));
-
-  // detect entity column
-  const entityKey =
-    Object.keys(data[0]).find(k => /exporter/i.test(k)) ||
-    Object.keys(data[0]).find(k => /importer/i.test(k));
-
-  return data.map(r => ({
-    ...r,
-    _label: r[entityKey] || "Unknown",
-    _txns: num(r["Transactions"]),
-    _weight: num(r["Weight(Kg)"]),
-    _amount: num(r["Amount($)"]),
-    _country: String(r["Country"] || "").toUpperCase().trim()
-  }));
-
-}, [data]);
-
  const processedData = useMemo(() => {
-  if (!normalizedRows.length) return [];
+    if (!data || data.length === 0) return [];
 
-  const basisKey =
-    basis === "Amount"
-      ? "_amount"
-      : basis === "Weight"
-      ? "_weight"
-      : "_txns";
+    // 1. Find the key for the metric basis (Amount/Weight/etc)
+    const basisKey = Object.keys(data[0]).find(k =>
+      k.toLowerCase().includes(basis.toLowerCase().substring(0, 3))
+    ) || "Amount";
 
-  const vals = normalizedRows.map(r => r[basisKey]).sort((a,b)=>a-b);
+    // 2. Find the key for the Entity Name (Exporter or Importer)
+    const nameKey = props.nameKey || Object.keys(data[0]).find(k => 
+      /exporter|importer|entity|name/i.test(k)
+    ) || "Name";
 
-  const p70 = vals[Math.floor(vals.length * 0.7)] || 0;
-  const p90 = vals[Math.floor(vals.length * 0.9)] || 0;
+    // 3. Find the key for Transactions
+    const txnKey = Object.keys(data[0]).find(k => 
+      /transaction|txn|count|no\./i.test(k)
+    );
 
-  return normalizedRows.map(r => {
-    const val = r[basisKey];
-
-    const risk =
-      val >= p90 ? "high" :
-      val >= p70 ? "med" :
-      "low";
-
-    return {
-      ...r,
-      _basisVal: val,
-      _risk: risk,
-      x: r._weight,
-      y: r._amount
-    };
-  });
-
-}, [normalizedRows, basis]);
+    const vals = data.map(r => Number(r[basisKey] || 0)).sort((a, b) => a - b);
+    const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
+    const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
+    
+    return data.map(r => {
+      const val = Number(r[basisKey] || 0);
+      const risk = val >= p90 ? "high" : (val >= p70 ? "med" : "low");
+      
+      return {
+        ...r,
+        _label: r[nameKey] || "Unknown", // Added this to fix the missing names
+        _risk: risk,
+        _basisVal: val,
+        _txns: txnKey ? Number(r[txnKey] || 0) : 0, // Fallback to 0 instead of NaN
+        x: Number(r.Weight || r["Weight(Kg)"] || r["Weight (Kg)"] || 0),
+        y: Number(r.Amount || r["Amount($)"] || r["Amount (USD)"] || 0)
+      };
+    });
+  }, [data, basis, props.nameKey]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
