@@ -220,10 +220,11 @@ export default function ReportTable({ report, onBack }) {
   }}
 >
   {(activeTab === "Charts" || activeTab === "Combined") && (
-   <ChartDashboard
+<ChartDashboard
   rows={rows}
   filteredRows={filteredRows}
-  nameKey={columnHeaders.find(h => /importer|exporter/i.test(h))}
+  // Try to find the key, but fallback to "_label" if the regex fails
+  nameKey={columnHeaders.find(h => /importer|exporter/i.test(h)) || "_label"}
 />
   )}
 </div>

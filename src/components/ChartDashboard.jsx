@@ -11,7 +11,7 @@ const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
 
 
 export default function ChartDashboard(props) {
-  const { rows, filteredRows } = props; // This extracts your data from props
+  const { rows, filteredRows, nameKey } = props;// This extracts your data from props
   const [basis, setBasis] = useState("Amount");
   const [hoveredEntity, setHoveredEntity] = useState(null);
  
@@ -21,62 +21,54 @@ export default function ChartDashboard(props) {
 const processedData = useMemo(() => {
   if (!data || data.length === 0) return [];
 
+  // 1. Get all available keys from the first row
   const allKeys = Object.keys(data[0]);
 
-  // 1. SURGICAL KEY DETECTION
-  const nameKey = allKeys.find(k => k === "Exporter" || k === "Importer") || 
-                  allKeys.find(k => k === "_label") || "";
+  // 2. Identify the Name Column
+  // We prioritize the prop, then the _label from PapaParse, then the first column
+  const nameKey = props.nameKey || 
+                  allKeys.find(k => k === "_label") || 
+                  allKeys.find(k => /exporter|importer/i.test(k)) || 
+                  allKeys[0];
 
-  const amountKey = allKeys.find(k => k === "Amount($)") || "Amount($)";
-  const weightKey = allKeys.find(k => k === "Weight(Kg)") || "Weight(Kg)";
-  const txnKey = "Transactions"; // Exact match based on your debug bar
+  // 3. Identify Metric Keys
+  // We look for the exact names you provided
+  const amountKey = allKeys.find(k => k.includes("Amount")) || allKeys.find(k => k.includes("$")) || "Amount";
+  const weightKey = allKeys.find(k => k.includes("Weight")) || "Weight";
+  const txnKey = allKeys.find(k => k.toLowerCase().includes("transaction")) || "Transactions";
 
   return data.map(r => {
-    // Helper to extract a number even if it's formatted as a string "$1,000"
+    // Helper to extract number
     const toNum = (val) => {
       if (typeof val === 'number') return val;
       const n = parseFloat(String(val || 0).replace(/[^\d.-]/g, ''));
       return isNaN(n) ? 0 : n;
     };
 
-    // DEEP SCAN FOR LABEL: If the detected nameKey is empty or "Unknown", 
-    // find the first column that isn't a number and isn't "Country" or "Notes"
-    let label = r[nameKey] || r._label;
-    if (!label || label === "Unknown") {
-      const backupKey = allKeys.find(k => 
-        typeof r[k] === 'string' && 
-        r[k].length > 2 && 
-        !/country|notes|url|product/i.test(k)
-      );
-      label = r[backupKey];
-    }
-
     const amt = toNum(r[amountKey]);
     const wgt = toNum(r[weightKey]);
     const txs = toNum(r[txnKey]);
     
     const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
-    
-    // Percentile logic within the map
-    const vals = data.map(row => toNum(row[basis === "Weight" ? weightKey : (basis === "Transactions" ? txnKey : amountKey)]));
-    const sorted = [...vals].sort((a,b) => a-b);
-    const p70 = sorted[Math.floor(sorted.length * 0.7)];
-    const p90 = sorted[Math.floor(sorted.length * 0.9)];
-    const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
 
     return {
       ...r,
-      _label: label || "Unknown Entity",
-      _risk: risk,
+      _label: r[nameKey] || r._label || "Unknown Entity",
       _basisVal: currentVal,
       _txns: txs,
       x: wgt,
       y: amt,
-      _debugNameKey: nameKey || "DeepScanned",
+      _debugNameKey: nameKey,
       _debugTxnKey: txnKey
     };
+  }).map((item, _, arr) => {
+    const sorted = arr.map(i => i._basisVal).sort((a, b) => a - b);
+    const p70 = sorted[Math.floor(sorted.length * 0.70)] || 0;
+    const p90 = sorted[Math.floor(sorted.length * 0.90)] || 0;
+    item._risk = item._basisVal >= p90 ? "high" : (item._basisVal >= p70 ? "med" : "low");
+    return item;
   });
-}, [data, basis]);
+}, [data, basis, props.nameKey]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
