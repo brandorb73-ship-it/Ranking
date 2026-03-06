@@ -18,52 +18,46 @@ export default function ChartDashboard(props) {
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
  const processedData = useMemo(() => {
-    if (!data || data.length === 0) return [];
+  if (!data || data.length === 0) return [];
 
-    // 1. Identify which mode we are in (Exporter or Importer)
-    const isExporter = Object.keys(data[0]).some(k => k === "Exporter");
-    const nameKey = isExporter ? "Exporter" : "Importer";
+  // 1. Map the EXACT column names from your data
+  const amountKey = "Amount($)";
+  const weightKey = "Weight(Kg)";
+  const txnKey = "Transactions";
+  
+  // 2. Identify the Entity Column (Exporter or Importer)
+  // We check the keys of the first row to see which one exists
+  const firstRowKeys = Object.keys(data[0]);
+  const entityKey = firstRowKeys.find(k => k === "Exporter" || k === "Importer") || "_label";
 
-    // 2. Define the exact keys from your data
-    const amountKey = "Amount($)";
-    const weightKey = "Weight(Kg)";
-    const txnKey = "Transactions";
+  // 3. Determine the "Basis" (what are we ranking by right now?)
+  const activeKey = basis === "Weight" ? weightKey : (basis === "Transactions" ? txnKey : amountKey);
 
-    // 3. Prepare values for Percentile/Risk calculation
-    const currentBasisKey = basis === "Amount" ? amountKey : (basis === "Weight" ? weightKey : txnKey);
+  // 4. Calculate Risk Percentiles
+  const vals = data.map(r => Number(r[activeKey] || 0)).sort((a, b) => a - b);
+  const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
+  const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
+  
+  return data.map(r => {
+    const amt = Number(r[amountKey] || 0);
+    const wgt = Number(r[weightKey] || 0);
+    const txs = Number(r[txnKey] || 0);
+    const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
     
-    // Clean and sort values to find 70th and 90th percentiles
-    const getCleanNum = (val) => {
-      if (typeof val === 'number') return val;
-      // Removes $, commas, and any non-numeric chars except decimals
-      const n = parseFloat(String(val || 0).replace(/[^\d.-]/g, ''));
-      return isNaN(n) ? 0 : n;
+    const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
+    
+    return {
+      ...r,
+      // FIX: This ensures the chart picks up "Exporter Name" or "Importer Name"
+      _label: r[entityKey] || r._label || "Unknown Entity", 
+      _risk: risk,
+      _basisVal: currentVal,
+      _txns: txs, 
+      x: wgt, 
+      y: amt
     };
-
-    const allVals = data.map(r => getCleanNum(r[currentBasisKey])).sort((a, b) => a - b);
-    const p70 = allVals[Math.floor(allVals.length * 0.70)] || 0;
-    const p90 = allVals[Math.floor(allVals.length * 0.90)] || 0;
-    
-    return data.map(r => {
-      const amt = getCleanNum(r[amountKey]);
-      const wgt = getCleanNum(r[weightKey]);
-      const txs = getCleanNum(r[txnKey]);
-      
-      // Determine the value based on the selected Tab (Amount/Weight/Transactions)
-      const currentVal = basis === "Amount" ? amt : (basis === "Weight" ? wgt : txs);
-      const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
-      
-      return {
-        ...r,
-        _label: r[nameKey] || "Unknown", // This fixes the chart names
-        _risk: risk,
-        _basisVal: currentVal,
-        _txns: txs, // This fixes the NaN in the table
-        x: wgt,     // Weight for Scatter Chart
-        y: amt      // Amount for Scatter Chart
-      };
-    });
-  }, [data, basis]);
+  });
+}, [data, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
