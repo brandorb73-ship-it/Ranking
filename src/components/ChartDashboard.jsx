@@ -17,51 +17,59 @@ export default function ChartDashboard(props) {
  
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
+  const normalizedRows = useMemo(() => {
+  if (!data?.length) return [];
+
+  const num = v => Number(String(v || 0).replace(/,/g, ""));
+
+  return data.map(r => ({
+    ...r,
+    _label: r.Exporter || r.Importer || r.Entity || r.Name,
+    _amount: num(r.Amount || r["Amount($)"]),
+    _weight: num(r.Weight || r["Weight(Kg)"]),
+    _txns: num(r.Transactions),
+    _country: (r.Country || r.Origin || "").toUpperCase().trim()
+  }));
+}, [data]);
 
  const processedData = useMemo(() => {
-  if (!data || data.length === 0) return [];
+  if (!normalizedRows.length) return [];
 
   const basisKey =
-    Object.keys(data[0]).find(k =>
-      k.toLowerCase().includes(basis.toLowerCase())
-    ) || "Amount";
+    basis === "Amount"
+      ? "_amount"
+      : basis === "Weight"
+      ? "_weight"
+      : "_txns";
 
-  const vals = data
-    .map(r => Number(String(r[basisKey]).replace(/,/g, "")) || 0)
-    .sort((a, b) => a - b);
+  const vals = normalizedRows.map(r => r[basisKey]).sort((a,b)=>a-b);
 
-  const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
-  const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
+  const p70 = vals[Math.floor(vals.length * 0.7)] || 0;
+  const p90 = vals[Math.floor(vals.length * 0.9)] || 0;
 
-  return data.map(r => {
-    const val = Number(String(r[basisKey]).replace(/,/g, "")) || 0;
+  return normalizedRows.map(r => {
+    const val = r[basisKey];
 
-    const txnKey =
-      Object.keys(r).find(k => /transaction|txn|count/i.test(k)) ||
-      "Transactions";
-
-    const nameKey =
-      Object.keys(r).find(k => /exporter|importer|entity|name/i.test(k)) ||
-      "Exporter";
-
-    const risk = val >= p90 ? "high" : val >= p70 ? "med" : "low";
+    const risk =
+      val >= p90 ? "high" :
+      val >= p70 ? "med" :
+      "low";
 
     return {
       ...r,
-      _label: r[nameKey],
-      _risk: risk,
       _basisVal: val,
-      _txns: parseFloat(String(r[txnKey]).replace(/,/g, "")) || 0,
-      x: Number(String(r.Weight || r["Weight(Kg)"] || 0).replace(/,/g, "")),
-      y: Number(String(r.Amount || r["Amount($)"] || 0).replace(/,/g, ""))
+      _risk: risk,
+      x: r._weight,
+      y: r._amount
     };
   });
-}, [data, basis]);
+
+}, [normalizedRows, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
     processedData.forEach(r => {
-      const c = r.Country || r.Origin || r.country;
+     const c = r._country;
       if (c && typeof c === 'string') {
         const key = c.toUpperCase().trim();
         counts[key] = (counts[key] || 0) + 1;
@@ -145,7 +153,7 @@ export default function ChartDashboard(props) {
                     <Cell
                       key={`cell-${index}`}
                       fill={color}
-                      onMouseEnter={() => setHoveredEntity(entry._label)}
+                      onMouseEnter={() => setHoveredEntity(entry._label || "Unknown")}
                       onMouseLeave={() => setHoveredEntity(null)}
                       shape={(props) => (
                         <g style={{ cursor: 'pointer' }}>
