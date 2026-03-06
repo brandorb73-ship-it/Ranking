@@ -20,41 +20,50 @@ export default function ChartDashboard(props) {
  const processedData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    // 1. Find the key for the metric basis (Amount/Weight/etc)
-    const basisKey = Object.keys(data[0]).find(k =>
-      k.toLowerCase().includes(basis.toLowerCase().substring(0, 3))
-    ) || "Amount";
+    // Helper to find a key regardless of spaces, case, or extra words
+    const findKey = (patterns) => {
+      return Object.keys(data[0]).find(k => 
+        patterns.some(p => k.toLowerCase().includes(p.toLowerCase()))
+      );
+    };
 
-    // 2. Find the key for the Entity Name (Exporter or Importer)
-    const nameKey = props.nameKey || Object.keys(data[0]).find(k => 
-      /exporter|importer|entity|name/i.test(k)
-    ) || "Name";
+    // 1. Identify the Columns
+    const nameKey = props.nameKey || findKey(["importer", "exporter", "entity", "company", "name"]) || "Name";
+    const amountKey = findKey(["amount", "value", "usd", "$"]) || "Amount";
+    const weightKey = findKey(["weight", "kg", "qty", "quantity"]) || "Weight";
+    const txnKey = findKey(["transaction", "txn", "count", "no.", "number"]) || "Transactions";
 
-    // 3. Find the key for Transactions
-    const txnKey = Object.keys(data[0]).find(k => 
-      /transaction|txn|count|no\./i.test(k)
-    );
+    // Debugging: Open your browser console (F12) to see if these match your CSV/Data
+    console.log("Detected Keys:", { nameKey, amountKey, weightKey, txnKey });
 
-    const vals = data.map(r => Number(r[basisKey] || 0)).sort((a, b) => a - b);
+    // 2. Calculate Risk Thresholds
+    const basisKey = basis === "Amount" ? amountKey : (basis === "Weight" ? weightKey : txnKey);
+    const vals = data.map(r => Number(r[basisKey]) || 0).sort((a, b) => a - b);
     const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
     const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
     
     return data.map(r => {
-      const val = Number(r[basisKey] || 0);
+      const val = Number(r[basisKey]) || 0;
       const risk = val >= p90 ? "high" : (val >= p70 ? "med" : "low");
       
+      // Ensure we pull numbers correctly, stripping commas or currency symbols if they exist
+      const cleanNum = (val) => {
+        if (typeof val === 'number') return val;
+        return Number(String(val || 0).replace(/[$,]/g, '')) || 0;
+      };
+
       return {
         ...r,
-        _label: r[nameKey] || "Unknown", // Added this to fix the missing names
+        _label: r[nameKey] || "Unknown Entity",
         _risk: risk,
         _basisVal: val,
-        _txns: txnKey ? Number(r[txnKey] || 0) : 0, // Fallback to 0 instead of NaN
-        x: Number(r.Weight || r["Weight(Kg)"] || r["Weight (Kg)"] || 0),
-        y: Number(r.Amount || r["Amount($)"] || r["Amount (USD)"] || 0)
+        _txns: cleanNum(r[txnKey]),
+        x: cleanNum(r[weightKey]),
+        y: cleanNum(r[amountKey])
       };
     });
   }, [data, basis, props.nameKey]);
-
+  
   const countryVolume = useMemo(() => {
     const counts = {};
     processedData.forEach(r => {
