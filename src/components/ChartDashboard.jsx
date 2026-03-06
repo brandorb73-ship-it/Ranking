@@ -1,280 +1,404 @@
 import React, { useMemo, useState } from "react";
 import {
-  ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis,
-  Tooltip, PieChart, Pie, Cell, Legend, BarChart, Bar, CartesianGrid
+  ResponsiveContainer,
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
 } from "recharts";
+
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 
+const geoUrl =
+  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
-const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
-const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
+const RISK_COLORS = {
+  low: "#10b981",
+  med: "#f59e0b",
+  high: "#ef4444"
+};
 
+const formatNum = (v) =>
+  Number(v || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
-export default function ChartDashboard({ data }) {
+export default function ChartDashboard({ rows = [], filteredRows = [] }) {
 
   const [basis, setBasis] = useState("Amount");
-  const [hoveredEntity, setHoveredEntity] = useState(null);
 
-  const safeData = Array.isArray(data) ? data : [];
+  const data =
+    filteredRows && filteredRows.length ? filteredRows : rows;
 
-  if (!safeData.length) {
-    return <div style={{padding:40}}>No chart data detected</div>;
+  if (!data.length) {
+    return <div style={{ padding: 40 }}>No chart data detected</div>;
   }
 
-  const headers = Object.keys(safeData[0]);
+  const headers = Object.keys(data[0]);
 
-  function detectColumn(keys, patterns) {
-    return keys.find(k =>
-      patterns.some(p => new RegExp(p,"i").test(k))
+  const detect = (patterns) =>
+    headers.find((k) =>
+      patterns.some((p) => new RegExp(p, "i").test(k))
     );
-  }
 
-  const nameKey =
-    detectColumn(headers, ["importer","consignee"]) ||
-    detectColumn(headers, ["exporter","shipper","seller"]) ||
-    detectColumn(headers, ["company","entity","name"]);
+  const importerKey = detect([
+    "importer",
+    "consignee",
+    "buyer"
+  ]);
 
-  const txnKey =
-    detectColumn(headers, ["transaction","txn","count"]);
+  const exporterKey = detect([
+    "exporter",
+    "shipper",
+    "seller"
+  ]);
 
-  const weightKey =
-    detectColumn(headers, ["weight","kg"]);
+  const entityKey =
+    importerKey || exporterKey || detect(["company","name"]);
 
-  const amountKey =
-    detectColumn(headers, ["amount","value","usd","\\$"]);
+  const txnKey = detect(["transaction","txn","count"]);
+  const weightKey = detect(["weight","kg"]);
+  const amountKey = detect(["amount","value","usd"]);
 
-  const qtyKey =
-    detectColumn(headers, ["qty","quantity"]);
+  const countryKey = detect([
+    "country",
+    "origin",
+    "nation"
+  ]);
 
-const processedData = useMemo(() => {
+  const entityType =
+    importerKey ? "Importer" : exporterKey ? "Exporter" : "Entity";
 
-  const metricKey =
-    basis === "Amount" ? amountKey :
-    basis === "Weight" ? weightKey :
-    qtyKey;
+  const processed = useMemo(() => {
 
-  return safeData.map((r,i)=>{
+    return data.map((r) => {
 
-    const label = r[nameKey] || r._label || "Unknown";
+      const label =
+        r[entityKey] ||
+        r[importerKey] ||
+        r[exporterKey] ||
+        "Unknown";
 
-    return {
-      ...r,
-      _label: label,
-      _txns: Number(r[txnKey] || 0),
-      x: Number(r[weightKey] || 0),
-      y: Number(r[amountKey] || 0),
-      metric: Number(r[metricKey] || 0)
-    };
+      const txns = Number(r[txnKey] || 0);
+      const weight = Number(r[weightKey] || 0);
+      const amount = Number(r[amountKey] || 0);
 
+      const metric =
+        basis === "Amount"
+          ? amount
+          : basis === "Weight"
+          ? weight
+          : txns;
+
+      let riskScore = 0;
+
+      riskScore += Math.min(txns * 1.5, 40);
+      riskScore += Math.min(amount / 40000, 30);
+      riskScore += Math.min(weight / 20000, 30);
+
+      riskScore = Math.min(Math.round(riskScore), 100);
+
+      let risk = "low";
+
+      if (riskScore > 70) risk = "high";
+      else if (riskScore > 40) risk = "med";
+
+      return {
+        label,
+        txns,
+        weight,
+        amount,
+        metric,
+        risk,
+        riskScore,
+        country: (r[countryKey] || "").toUpperCase()
+      };
+
+    });
+
+  }, [data, basis]);
+
+  const topEntities = [...processed]
+    .sort((a, b) => b.metric - a.metric)
+    .slice(0, 5);
+
+  const spikes = processed.filter(
+    (r) => r.txns > 50 || r.amount > 1000000
+  );
+
+  const riskTotals = useMemo(() => {
+
+    const totals = { low: 0, med: 0, high: 0 };
+
+    processed.forEach((r) => {
+      totals[r.risk] += r.metric;
+    });
+
+    const sum =
+      totals.low + totals.med + totals.high;
+
+    return [
+      {
+        name: "Low",
+        value: totals.low,
+        pct: ((totals.low / sum) * 100).toFixed(0)
+      },
+      {
+        name: "Medium",
+        value: totals.med,
+        pct: ((totals.med / sum) * 100).toFixed(0)
+      },
+      {
+        name: "High",
+        value: totals.high,
+        pct: ((totals.high / sum) * 100).toFixed(0)
+      }
+    ];
+
+  }, [processed]);
+
+  const countryCounts = {};
+
+  processed.forEach((r) => {
+    if (!r.country) return;
+    countryCounts[r.country] =
+      (countryCounts[r.country] || 0) + 1;
   });
 
-}, [safeData, basis]);
+  const maxCountry = Math.max(
+    ...Object.values(countryCounts),
+    1
+  );
 
-  const countryVolume = useMemo(() => {
-    const counts = {};
-    processedData.forEach(r => {
-      const c = r.Country || r.Origin || r.country;
-      if (c && typeof c === 'string') {
-        const key = c.toUpperCase().trim();
-        counts[key] = (counts[key] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [processedData]);
+  const aiSummary = `
+Investigation dataset analysed ${processed.length} ${entityType.toLowerCase()}s.
 
+${spikes.length} abnormal shipment spikes were detected.
 
-  const sortedCountries = Object.entries(countryVolume).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxVol = Math.max(...Object.values(countryVolume), 1);
-  const outliers = [...processedData].sort((a, b) => b._basisVal - a._basisVal).slice(0, 5);
+Top ${entityType.toLowerCase()} concentration:
+${topEntities.map((e) => e.label).join(", ")}.
 
-
-  if (!data.length) return <div style={{padding: '20px'}}>Processing charts...</div>;
-
+${processed.filter((r) => r.risk === "high").length}
+high-risk ${entityType.toLowerCase()}s require investigation.
+`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
 
-      <div style={{ background: '#fff3cd', padding: '10px', borderRadius: '8px', fontSize: '10px', border: '1px solid #ffeeba' }}>
-  <b>System Headers:</b> {processedData[0]?._allKeysFound} <br/>
-  <b>Link Status:</b> Name via: [{processedData[0]?._debugNameKey}] | 
-  Txns via: [{processedData[0]?._debugTxnKey}] | 
-  Sample: <b>{processedData[0]?._label}</b>
-</div>
-     
-      {/* 1. TABS & RISK INDICATORS */}
-      <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {["Amount", "Weight", "Transactions"].map(t => (
-            <button key={t} onClick={() => setBasis(t)} style={{
-              padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', border: 'none',
-              background: basis === t ? '#1e3a8a' : '#f1f5f9', color: basis === t ? '#fff' : '#475569', fontWeight: 'bold'
-            }}>{t}</button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '20px' }}>
-           {Object.entries(RISK_COLORS).map(([k, v]) => (
-             <div key={k} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 'bold' }}>
-               <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: v }} />
-               <span>{k.toUpperCase()} RISK</span>
-             </div>
-           ))}
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 25 }}>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        {["Amount", "Weight", "Transactions"].map((t) => (
+          <button
+            key={t}
+            onClick={() => setBasis(t)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 6,
+              border: "none",
+              cursor: "pointer",
+              background: basis === t ? "#1e3a8a" : "#e2e8f0",
+              color: basis === t ? "#fff" : "#334155",
+              fontWeight: "bold"
+            }}
+          >
+            {t}
+          </button>
+        ))}
       </div>
 
-
-      {/* 2. HIGH RISK & OUTLIERS */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-        <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', borderTop: '4px solid #ef4444' }}>
-           <h4 style={{ color: '#1e3a8a', marginTop: 0 }}>🚨 High Risk Profiles</h4>
-           <table style={{ width: '100%', fontSize: '12px' }}>
-             <tbody>
-               {processedData.filter(r => r._risk === 'high').slice(0, 5).map((r, i) => (
-                 <tr key={i}><td style={{padding: '4px 0'}}>{r._label}</td><td style={{ textAlign: 'right', color: '#ef4444', fontWeight: 'bold' }}>HIGH</td></tr>
-               ))}
-             </tbody>
-           </table>
-        </div>
-        <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', borderTop: '4px solid #1e3a8a' }}>
-           <h4 style={{ color: '#1e3a8a', marginTop: 0 }}>📊 Smart Outliers ({basis})</h4>
-           <table style={{ width: '100%', fontSize: '12px' }}>
-             <tbody>
-               {outliers.map((r, i) => (
-                 <tr key={i}><td style={{padding: '4px 0'}}>{r._label}</td><td style={{ textAlign: 'right', fontWeight: 'bold' }}>{r._basisVal.toLocaleString()}</td></tr>
-               ))}
-             </tbody>
-           </table>
-        </div>
+      <div
+        style={{
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          padding: 15,
+          borderRadius: 10,
+          fontSize: 13
+        }}
+      >
+        <b>AI Investigation Summary</b>
+        <div style={{ marginTop: 6 }}>{aiSummary}</div>
       </div>
 
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
-      {/* 3. SCATTER & BAR CHARTS (FIXED COLORS & CLIPPING) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px' }}>
-          <h4 style={{color: '#1e3a8a'}}>Risk Matrix (Weight vs Value)</h4>
+        <div style={{ background: "#fff", padding: 20, borderRadius: 12 }}>
+
+          <h4>Risk Matrix (Weight vs Value)</h4>
+
           <ResponsiveContainer width="100%" height={320}>
-            <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis type="number" dataKey="x" name="Weight" unit="kg" tickFormatter={v => v.toLocaleString()} />
-              <YAxis type="number" dataKey="y" name="Value" tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
-              <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={v => v.toLocaleString()} />
-              <Scatter data={processedData}>
-                {processedData.map((entry, index) => {
-                  const color = RISK_COLORS[entry._risk];
+
+            <ScatterChart>
+
+              <CartesianGrid strokeDasharray="3 3" />
+
+              <XAxis
+                type="number"
+                dataKey="weight"
+                tickFormatter={(v) => formatNum(v)}
+              />
+
+              <YAxis
+                type="number"
+                dataKey="amount"
+                tickFormatter={(v) => formatNum(v)}
+              />
+
+              <Tooltip formatter={(v) => formatNum(v)} />
+
+              <Scatter data={processed}>
+
+                {processed.map((entry, i) => {
+
+                  const color = RISK_COLORS[entry.risk];
+
                   return (
                     <Cell
-                      key={`cell-${index}`}
+                      key={i}
                       fill={color}
-                      onMouseEnter={() => setHoveredEntity(entry._label)}
-                      onMouseLeave={() => setHoveredEntity(null)}
                       shape={(props) => (
-                        <g style={{ cursor: 'pointer' }}>
-                          {/* CONCENTRIC RINGS RESTORED */}
-                          {entry._risk === "high" && <circle cx={props.cx} cy={props.cy} r={14} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="3 2" />}
-                          {entry._risk === "med" && <circle cx={props.cx} cy={props.cy} r={10} fill="none" stroke={color} strokeWidth={1} strokeDasharray="4 2" />}
-                          <circle cx={props.cx} cy={props.cy} r={hoveredEntity === entry._label ? 8 : 6} fill={hoveredEntity === entry._label ? "#1e3a8a" : color} stroke="#fff" strokeWidth={1} />
+                        <g>
+
+                          {entry.risk === "high" && (
+                            <circle
+                              cx={props.cx}
+                              cy={props.cy}
+                              r={14}
+                              fill="none"
+                              stroke={color}
+                              strokeDasharray="3 2"
+                            />
+                          )}
+
+                          <circle
+                            cx={props.cx}
+                            cy={props.cy}
+                            r={6}
+                            fill={color}
+                          />
+
                         </g>
                       )}
                     />
                   );
                 })}
+
               </Scatter>
+
             </ScatterChart>
+
           </ResponsiveContainer>
+
         </div>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px' }}>
-          <h4 style={{color: '#1e3a8a'}}>Top 5 Entities by {basis}</h4>
+
+        <div style={{ background: "#fff", padding: 20, borderRadius: 12 }}>
+
+          <h4>Top {entityType}s</h4>
+
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={outliers} margin={{ top: 10, bottom: 100, left: 50, right: 10 }}>
-              <XAxis dataKey="_label" angle={-45} textAnchor="end" interval={0} tick={{ fontSize: 10, width: 100 }} height={100} />
-              <YAxis tickFormatter={v => v.toLocaleString()} />
-              <Tooltip formatter={v => v.toLocaleString()} />
-              <Bar dataKey="_basisVal" fill="#1e3a8a" radius={[4, 4, 0, 0]} />
+
+            <BarChart data={topEntities}>
+
+              <XAxis
+                dataKey="label"
+                angle={-35}
+                textAnchor="end"
+                interval={0}
+              />
+
+              <YAxis tickFormatter={(v) => formatNum(v)} />
+
+              <Tooltip formatter={(v) => formatNum(v)} />
+
+              <Bar dataKey="metric" fill="#1e3a8a" />
+
             </BarChart>
+
           </ResponsiveContainer>
+
         </div>
+
       </div>
 
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 25 }}>
 
-     {/* 4. INTERACTIVE RISK MATRIX TABLE */}
-<div style={{ background: '#fff', borderRadius: '12px', border: '2px solid #1e3a8a', overflow: 'hidden' }}>
-  <div style={{ background: '#1e3a8a', color: '#fff', padding: '10px 20px', fontWeight: 'bold' }}>Interactive Risk Matrix</div>
-  <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-      <thead>
-        <tr style={{ textAlign: 'left', background: '#f8fafc', position: 'sticky', top: 0 }}>
-          {/* DYNAMIC HEADER LOGIC BELOW */}
-          <th style={{ padding: '12px' }}>
-            {props.nameKey || (processedData[0] && Object.keys(processedData[0]).find(k => /importer/i.test(k)) ? 'Importer' : 'Exporter')}
-          </th>
-          <th>Amount (USD)</th>
-          <th>Weight (kg)</th>
-          <th>Transactions</th>
-          <th>Risk Analysis</th>
-        </tr>
-      </thead>
-      <tbody>
-        {processedData.map((r, i) => (
-          <tr key={i} style={{ background: hoveredEntity === r._label ? '#eff6ff' : 'transparent', borderBottom: '1px solid #f1f5f9' }}>
-            <td style={{ padding: '10px 12px' }}>{r._label}</td>
-            <td>${r.y.toLocaleString()}</td>
-            <td>{r.x.toLocaleString()} kg</td>
-            <td>{r._txns.toLocaleString()}</td>
-            <td><span style={{ padding: '2px 8px', borderRadius: '10px', background: RISK_COLORS[r._risk], color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>{r._risk.toUpperCase()}</span></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-</div>
-      {/* 5. MAP & PIE CHART */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '25px' }}>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', display: 'flex', gap: '15px' }}>
-          <div style={{ flex: 1 }}>
-            <h4 style={{color: '#1e3a8a'}}>Geographic Concentration</h4>
-            <div style={{ height: '280px', overflow: 'hidden' }}>
-              <ComposableMap projectionConfig={{ scale: 120, center: [10, 20] }} width={800} height={400}>
-                <Geographies geography={geoUrl}>
-                  {({ geographies }) => geographies.map(geo => {
-                    const name = (geo.properties?.NAME || geo.properties?.name || "").toUpperCase();
-                    const count = countryVolume[name] || 0;
-                    return <Geography key={geo.rsmKey} geography={geo} fill={count ? `rgba(30, 58, 138, ${0.2 + (count/maxVol)*0.8})` : "#f1f5f9"} stroke="#fff" strokeWidth={0.5} />;
-                  })}
-                </Geographies>
-              </ComposableMap>
-            </div>
-          </div>
-          <div style={{ width: '180px', paddingTop: '40px' }}>
-             <h5 style={{ fontSize: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '5px' }}>Top Countries</h5>
-             {sortedCountries.map(([name, count]) => (
-               <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0' }}>
-                 <span title={name}>{name.length > 15 ? name.substring(0, 15) + "..." : name}</span>
-                 <b style={{ color: '#1e3a8a' }}>{count}</b>
-               </div>
-             ))}
-          </div>
-        </div>
+        <div style={{ background: "#fff", padding: 20, borderRadius: 12 }}>
 
+          <h4>Risk Distribution</h4>
 
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px' }}>
-          <h4 style={{ color: '#1e3a8a' }}>Risk Distribution</h4>
-          <ResponsiveContainer width="100%" height={250}>
+          <ResponsiveContainer width="100%" height={260}>
+
             <PieChart>
-              <Pie data={[
-                  { name: 'Low', value: processedData.filter(x => x._risk === 'low').reduce((s, c) => s + c._basisVal, 0) },
-                  { name: 'Med', value: processedData.filter(x => x._risk === 'med').reduce((s, c) => s + c._basisVal, 0) },
-                  { name: 'High', value: processedData.filter(x => x._risk === 'high').reduce((s, c) => s + c._basisVal, 0) }
-                ]}
-                dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}
-                label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ""}
+
+              <Pie
+                data={riskTotals}
+                dataKey="value"
+                innerRadius={60}
+                outerRadius={90}
+                label={(d) => `${d.name} ${d.pct}%`}
               >
-                <Cell fill={RISK_COLORS.low} /><Cell fill={RISK_COLORS.med} /><Cell fill={RISK_COLORS.high} />
+
+                <Cell fill={RISK_COLORS.low} />
+                <Cell fill={RISK_COLORS.med} />
+                <Cell fill={RISK_COLORS.high} />
+
               </Pie>
-              <Tooltip formatter={v => v.toLocaleString()} />
-              <Legend verticalAlign="bottom" height={36}/>
+
+              <Legend />
+
             </PieChart>
+
           </ResponsiveContainer>
+
         </div>
+
+        <div style={{ background: "#fff", padding: 20, borderRadius: 12 }}>
+
+          <h4>Global Shipment Heatmap</h4>
+
+          <ComposableMap projectionConfig={{ scale: 120 }}>
+
+            <Geographies geography={geoUrl}>
+              {({ geographies }) =>
+                geographies.map((geo) => {
+
+                  const name =
+                    geo.properties.NAME?.toUpperCase() || "";
+
+                  const count =
+                    countryCounts[name] || 0;
+
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      fill={
+                        count
+                          ? `rgba(30,58,138,${
+                              0.2 + count / maxCountry
+                            })`
+                          : "#e2e8f0"
+                      }
+                      stroke="#fff"
+                    />
+                  );
+
+                })
+              }
+            </Geographies>
+
+          </ComposableMap>
+
+        </div>
+
       </div>
+
     </div>
+
   );
 }

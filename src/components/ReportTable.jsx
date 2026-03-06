@@ -227,8 +227,6 @@ export default function ReportTable({ report, onBack }) {
 </div>
 
 
-
-
         <div id="table-container" style={{ background: '#fff', padding: '20px', borderRadius: '8px', marginTop: '20px' }}>
           {(activeTab === "Table" || activeTab === "Combined") && (
             <>
