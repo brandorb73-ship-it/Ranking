@@ -18,58 +18,61 @@ export default function ChartDashboard(props) {
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
 
-  const processedData = useMemo(() => {
+const processedData = useMemo(() => {
   if (!data || data.length === 0) return [];
 
   const allKeys = Object.keys(data[0]);
 
   // 1. SURGICAL KEY DETECTION
-  // We look for EXACT matches first to avoid picking up "Country" or "Product"
   const nameKey = allKeys.find(k => k === "Exporter" || k === "Importer") || 
-                  allKeys.find(k => k === "_label") || 
-                  allKeys[0];
+                  allKeys.find(k => k === "_label") || "";
 
-  const amountKey = allKeys.find(k => k === "Amount($)") || 
-                    allKeys.find(k => k.includes("$")) || "Amount";
+  const amountKey = allKeys.find(k => k === "Amount($)") || "Amount($)";
+  const weightKey = allKeys.find(k => k === "Weight(Kg)") || "Weight(Kg)";
+  const txnKey = "Transactions"; // Exact match based on your debug bar
 
-  const weightKey = allKeys.find(k => k === "Weight(Kg)") || 
-                    allKeys.find(k => k.toLowerCase().includes("weight")) || "Weight";
-
-  const txnKey = allKeys.find(k => k === "Transactions") || 
-                 allKeys.find(k => k.toLowerCase() === "txn") || "Transactions";
-
-  // 2. BASIS LOGIC
-  const activeKey = basis === "Weight" ? weightKey : (basis === "Transactions" ? txnKey : amountKey);
-
-  // 3. PERCENTILES
-  const vals = data.map(r => Number(r[activeKey]) || 0).sort((a, b) => a - b);
-  const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
-  const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
-  
   return data.map(r => {
-    // Helper to ensure we get a clean number
+    // Helper to extract a number even if it's formatted as a string "$1,000"
     const toNum = (val) => {
       if (typeof val === 'number') return val;
       const n = parseFloat(String(val || 0).replace(/[^\d.-]/g, ''));
       return isNaN(n) ? 0 : n;
     };
 
+    // DEEP SCAN FOR LABEL: If the detected nameKey is empty or "Unknown", 
+    // find the first column that isn't a number and isn't "Country" or "Notes"
+    let label = r[nameKey] || r._label;
+    if (!label || label === "Unknown") {
+      const backupKey = allKeys.find(k => 
+        typeof r[k] === 'string' && 
+        r[k].length > 2 && 
+        !/country|notes|url|product/i.test(k)
+      );
+      label = r[backupKey];
+    }
+
     const amt = toNum(r[amountKey]);
     const wgt = toNum(r[weightKey]);
     const txs = toNum(r[txnKey]);
+    
     const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
     
+    // Percentile logic within the map
+    const vals = data.map(row => toNum(row[basis === "Weight" ? weightKey : (basis === "Transactions" ? txnKey : amountKey)]));
+    const sorted = [...vals].sort((a,b) => a-b);
+    const p70 = sorted[Math.floor(sorted.length * 0.7)];
+    const p90 = sorted[Math.floor(sorted.length * 0.9)];
     const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
-    
+
     return {
       ...r,
-      _label: r[nameKey] || "Unknown", 
+      _label: label || "Unknown Entity",
       _risk: risk,
       _basisVal: currentVal,
-      _txns: txs, 
-      x: wgt, 
+      _txns: txs,
+      x: wgt,
       y: amt,
-      _debugNameKey: nameKey,
+      _debugNameKey: nameKey || "DeepScanned",
       _debugTxnKey: txnKey
     };
   });
