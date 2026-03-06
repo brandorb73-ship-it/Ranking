@@ -17,19 +17,25 @@ export default function ChartDashboard(props) {
  
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
-  const normalizedRows = useMemo(() => {
+const normalizedRows = useMemo(() => {
   if (!data?.length) return [];
 
   const num = v => Number(String(v || 0).replace(/,/g, ""));
 
+  // detect entity column
+  const entityKey =
+    Object.keys(data[0]).find(k => /exporter/i.test(k)) ||
+    Object.keys(data[0]).find(k => /importer/i.test(k));
+
   return data.map(r => ({
     ...r,
-    _label: r.Exporter || r.Importer || r.Entity || r.Name,
-    _amount: num(r.Amount || r["Amount($)"]),
-    _weight: num(r.Weight || r["Weight(Kg)"]),
-    _txns: num(r.Transactions),
-    _country: (r.Country || r.Origin || "").toUpperCase().trim()
+    _label: r[entityKey] || "Unknown",
+    _txns: num(r["Transactions"]),
+    _weight: num(r["Weight(Kg)"]),
+    _amount: num(r["Amount($)"]),
+    _country: String(r["Country"] || "").toUpperCase().trim()
   }));
+
 }, [data]);
 
  const processedData = useMemo(() => {
