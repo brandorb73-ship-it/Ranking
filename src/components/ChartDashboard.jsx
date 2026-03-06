@@ -18,33 +18,45 @@ export default function ChartDashboard(props) {
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
 
-  const processedData = useMemo(() => {
-    if (!data || data.length === 0) return [];
-    const basisKey = Object.keys(data[0]).find(k =>
-      k.toLowerCase().includes(basis.toLowerCase().substring(0,3))
+ const processedData = useMemo(() => {
+  if (!data || data.length === 0) return [];
+
+  const basisKey =
+    Object.keys(data[0]).find(k =>
+      k.toLowerCase().includes(basis.toLowerCase())
     ) || "Amount";
 
+  const vals = data
+    .map(r => Number(String(r[basisKey]).replace(/,/g, "")) || 0)
+    .sort((a, b) => a - b);
 
-    const vals = data.map(r => Number(r[basisKey] || 0)).sort((a, b) => a - b);
-    const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
-    const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
-   
-    return data.map(r => {
-      const val = Number(r[basisKey] || 0);
-      const risk = val >= p90 ? "high" : (val >= p70 ? "med" : "low");
-      const txnKey = Object.keys(r).find(k => /transaction|txn|count/i.test(k)) || "Transactions";
-     
-      return {
-        ...r,
-        _risk: risk,
-        _basisVal: val,
-        _txns: Number(r[txnKey] || 0),
-        x: Number(r.Weight || r["Weight(Kg)"] || 0),
-        y: Number(r.Amount || r["Amount($)"] || 0)
-      };
-    });
-  }, [data, basis]);
+  const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
+  const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
 
+  return data.map(r => {
+    const val = Number(String(r[basisKey]).replace(/,/g, "")) || 0;
+
+    const txnKey =
+      Object.keys(r).find(k => /transaction|txn|count/i.test(k)) ||
+      "Transactions";
+
+    const nameKey =
+      Object.keys(r).find(k => /exporter|importer|entity|name/i.test(k)) ||
+      "Exporter";
+
+    const risk = val >= p90 ? "high" : val >= p70 ? "med" : "low";
+
+    return {
+      ...r,
+      _label: r[nameKey],
+      _risk: risk,
+      _basisVal: val,
+      _txns: parseFloat(String(r[txnKey]).replace(/,/g, "")) || 0,
+      x: Number(String(r.Weight || r["Weight(Kg)"] || 0).replace(/,/g, "")),
+      y: Number(String(r.Amount || r["Amount($)"] || 0).replace(/,/g, ""))
+    };
+  });
+}, [data, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
