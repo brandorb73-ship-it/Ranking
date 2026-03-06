@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 
+console.log(data[0]);
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
@@ -39,52 +40,35 @@ export default function ChartDashboard(props) {
   const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
   
   return data.map(r => {
-
+  // Use cleaned & normalized fields from ReportTable
   const amt = Number(r["Amount($)"] || 0);
   const wgt = Number(r["Weight(Kg)"] || 0);
   const txs = Number(r["Transactions"] || 0);
 
   const currentVal =
-    basis === "Weight"
-      ? wgt
-      : basis === "Transactions"
-      ? txs
+    basis === "Weight" ? wgt
+      : basis === "Transactions" ? txs
       : amt;
 
   const risk =
-    currentVal >= p90
-      ? "high"
-      : currentVal >= p70
-      ? "med"
+    currentVal >= p90 ? "high"
+      : currentVal >= p70 ? "med"
       : "low";
 
   const label =
-    r._label ||
-    r.Exporter ||
-    r.Importer ||
-    "Unknown";
+    r._label || r.Exporter || r.Importer || "Unknown";
 
-const columnMap = {
-  exporter: "Exporter",
-  importer: "Importer",
-  weight: "Weight(Kg)",
-  amount: "Amount($)",
-  transactions: "Transactions"
-};
-    
-return {
-      ...r,
-      _label: label,
-      _risk: risk,
-      _basisVal: currentVal,
-      _txns: txs,
-      x: wgt,
-      y: amt
-    };
-
-  });
-
-}, [data, basis]);
+  return {
+    ...r,
+    _label: label,
+    _risk: risk,
+    _basisVal: currentVal,
+    _txns: txs,
+    x: wgt,
+    y: amt
+  };
+});
+}, [data, basis])
 
   const countryVolume = useMemo(() => {
     const counts = {};
