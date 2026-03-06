@@ -5,59 +5,80 @@ import {
 } from "recharts";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 
-console.log(data[0]);
 
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
 
 
 export default function ChartDashboard(props) {
-  const { rows, filteredRows } = props; // rows must be an array, filteredRows can be []
-
+  const { rows, filteredRows } = props; // This extracts your data from props
   const [basis, setBasis] = useState("Amount");
   const [hoveredEntity, setHoveredEntity] = useState(null);
-
-  // ✅ data must be defined BEFORE useMemo
+ 
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
+
   const processedData = useMemo(() => {
-    if (!data || data.length === 0) return [];
+  if (!data || data.length === 0) return [];
 
-    // Your mapping logic here...
-    return data.map(r => {
-      const amt = Number(r["Amount($)"] || 0);
-      const wgt = Number(r["Weight(Kg)"] || 0);
-      const txs = Number(r["Transactions"] || 0);
+  const allKeys = Object.keys(data[0]);
 
-      const currentVal =
-        basis === "Weight" ? wgt
-          : basis === "Transactions" ? txs
-          : amt;
+  // 1. SURGICAL KEY DETECTION
+  // We look for EXACT matches first to avoid picking up "Country" or "Product"
+  const nameKey = allKeys.find(k => k === "Exporter" || k === "Importer") || 
+                  allKeys.find(k => k === "_label") || 
+                  allKeys[0];
 
-      const risk =
-        currentVal >= p90 ? "high"
-          : currentVal >= p70 ? "med"
-          : "low";
+  const amountKey = allKeys.find(k => k === "Amount($)") || 
+                    allKeys.find(k => k.includes("$")) || "Amount";
 
-      const label =
-        r._label || r.Exporter || r.Importer || "Unknown";
+  const weightKey = allKeys.find(k => k === "Weight(Kg)") || 
+                    allKeys.find(k => k.toLowerCase().includes("weight")) || "Weight";
 
-      return {
-        ...r,
-        _label: label,
-        _risk: risk,
-        _basisVal: currentVal,
-        _txns: txs,
-        x: wgt,
-        y: amt
-      };
-    });
-  }, [data, basis]);
+  const txnKey = allKeys.find(k => k === "Transactions") || 
+                 allKeys.find(k => k.toLowerCase() === "txn") || "Transactions";
+
+  // 2. BASIS LOGIC
+  const activeKey = basis === "Weight" ? weightKey : (basis === "Transactions" ? txnKey : amountKey);
+
+  // 3. PERCENTILES
+  const vals = data.map(r => Number(r[activeKey]) || 0).sort((a, b) => a - b);
+  const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
+  const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
+  
+  return data.map(r => {
+    // Helper to ensure we get a clean number
+    const toNum = (val) => {
+      if (typeof val === 'number') return val;
+      const n = parseFloat(String(val || 0).replace(/[^\d.-]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+
+    const amt = toNum(r[amountKey]);
+    const wgt = toNum(r[weightKey]);
+    const txs = toNum(r[txnKey]);
+    const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
+    
+    const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
+    
+    return {
+      ...r,
+      _label: r[nameKey] || "Unknown", 
+      _risk: risk,
+      _basisVal: currentVal,
+      _txns: txs, 
+      x: wgt, 
+      y: amt,
+      _debugNameKey: nameKey,
+      _debugTxnKey: txnKey
+    };
+  });
+}, [data, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
     processedData.forEach(r => {
-     const c = r._country;
+      const c = r.Country || r.Origin || r.country;
       if (c && typeof c === 'string') {
         const key = c.toUpperCase().trim();
         counts[key] = (counts[key] || 0) + 1;
@@ -77,6 +98,13 @@ export default function ChartDashboard(props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+        {/* DEBUG HEADER - REMOVE AFTER FIXING */}
+      <div style={{ background: '#fff3cd', padding: '10px', borderRadius: '8px', fontSize: '11px', border: '1px solid #ffeeba', color: '#856404' }}>
+        <b>🔍 Data Link Status:</b> 
+        <span style={{ marginLeft: '15px' }}>Found Name via: <b>{processedData[0]?._debugNameKey || "NOT FOUND"}</b></span>
+        <span style={{ marginLeft: '15px' }}>Found Txns via: <b>{processedData[0]?._debugTxnKey || "NOT FOUND"}</b></span>
+        <span style={{ marginLeft: '15px' }}>Sample Label: <b>{processedData[0]?._label}</b></span>
+      </div>
      
       {/* 1. TABS & RISK INDICATORS */}
       <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
@@ -141,7 +169,7 @@ export default function ChartDashboard(props) {
                     <Cell
                       key={`cell-${index}`}
                       fill={color}
-                      onMouseEnter={() => setHoveredEntity(entry._label || "Unknown")}
+                      onMouseEnter={() => setHoveredEntity(entry._label)}
                       onMouseLeave={() => setHoveredEntity(null)}
                       shape={(props) => (
                         <g style={{ cursor: 'pointer' }}>
@@ -250,7 +278,7 @@ export default function ChartDashboard(props) {
               <Legend verticalAlign="bottom" height={36}/>
             </PieChart>
           </ResponsiveContainer>
-          </div>
+        </div>
       </div>
     </div>
   );
