@@ -20,50 +20,51 @@ export default function ChartDashboard(props) {
  const processedData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
-    // Helper to find a key regardless of spaces, case, or extra words
-    const findKey = (patterns) => {
-      return Object.keys(data[0]).find(k => 
-        patterns.some(p => k.toLowerCase().includes(p.toLowerCase()))
-      );
+    // 1. Identify which mode we are in (Exporter or Importer)
+    const isExporter = Object.keys(data[0]).some(k => k === "Exporter");
+    const nameKey = isExporter ? "Exporter" : "Importer";
+
+    // 2. Define the exact keys from your data
+    const amountKey = "Amount($)";
+    const weightKey = "Weight(Kg)";
+    const txnKey = "Transactions";
+
+    // 3. Prepare values for Percentile/Risk calculation
+    const currentBasisKey = basis === "Amount" ? amountKey : (basis === "Weight" ? weightKey : txnKey);
+    
+    // Clean and sort values to find 70th and 90th percentiles
+    const getCleanNum = (val) => {
+      if (typeof val === 'number') return val;
+      // Removes $, commas, and any non-numeric chars except decimals
+      const n = parseFloat(String(val || 0).replace(/[^\d.-]/g, ''));
+      return isNaN(n) ? 0 : n;
     };
 
-    // 1. Identify the Columns
-    const nameKey = props.nameKey || findKey(["importer", "exporter", "entity", "company", "name"]) || "Name";
-    const amountKey = findKey(["amount", "value", "usd", "$"]) || "Amount";
-    const weightKey = findKey(["weight", "kg", "qty", "quantity"]) || "Weight";
-    const txnKey = findKey(["transaction", "txn", "count", "no.", "number"]) || "Transactions";
-
-    // Debugging: Open your browser console (F12) to see if these match your CSV/Data
-    console.log("Detected Keys:", { nameKey, amountKey, weightKey, txnKey });
-
-    // 2. Calculate Risk Thresholds
-    const basisKey = basis === "Amount" ? amountKey : (basis === "Weight" ? weightKey : txnKey);
-    const vals = data.map(r => Number(r[basisKey]) || 0).sort((a, b) => a - b);
-    const p70 = vals[Math.floor(vals.length * 0.70)] || 0;
-    const p90 = vals[Math.floor(vals.length * 0.90)] || 0;
+    const allVals = data.map(r => getCleanNum(r[currentBasisKey])).sort((a, b) => a - b);
+    const p70 = allVals[Math.floor(allVals.length * 0.70)] || 0;
+    const p90 = allVals[Math.floor(allVals.length * 0.90)] || 0;
     
     return data.map(r => {
-      const val = Number(r[basisKey]) || 0;
-      const risk = val >= p90 ? "high" : (val >= p70 ? "med" : "low");
+      const amt = getCleanNum(r[amountKey]);
+      const wgt = getCleanNum(r[weightKey]);
+      const txs = getCleanNum(r[txnKey]);
       
-      // Ensure we pull numbers correctly, stripping commas or currency symbols if they exist
-      const cleanNum = (val) => {
-        if (typeof val === 'number') return val;
-        return Number(String(val || 0).replace(/[$,]/g, '')) || 0;
-      };
-
+      // Determine the value based on the selected Tab (Amount/Weight/Transactions)
+      const currentVal = basis === "Amount" ? amt : (basis === "Weight" ? wgt : txs);
+      const risk = currentVal >= p90 ? "high" : (currentVal >= p70 ? "med" : "low");
+      
       return {
         ...r,
-        _label: r[nameKey] || "Unknown Entity",
+        _label: r[nameKey] || "Unknown", // This fixes the chart names
         _risk: risk,
-        _basisVal: val,
-        _txns: cleanNum(r[txnKey]),
-        x: cleanNum(r[weightKey]),
-        y: cleanNum(r[amountKey])
+        _basisVal: currentVal,
+        _txns: txs, // This fixes the NaN in the table
+        x: wgt,     // Weight for Scatter Chart
+        y: amt      // Amount for Scatter Chart
       };
     });
-  }, [data, basis, props.nameKey]);
-  
+  }, [data, basis]);
+
   const countryVolume = useMemo(() => {
     const counts = {};
     processedData.forEach(r => {
