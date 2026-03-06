@@ -5,40 +5,34 @@ import {
 } from "recharts";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 
-
 const geoUrl = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const RISK_COLORS = { low: "#10b981", med: "#f59e0b", high: "#ef4444" };
 
-
 export default function ChartDashboard(props) {
-  const { rows, filteredRows, nameKey } = props;// This extracts your data from props
+  const { rows, filteredRows, nameKey: propNameKey } = props;
   const [basis, setBasis] = useState("Amount");
   const [hoveredEntity, setHoveredEntity] = useState(null);
- 
+  
   const data = filteredRows.length > 0 ? filteredRows : rows;
 
-
 const processedData = useMemo(() => {
-  if (!data || data.length === 0) return [];
+  // Safety check: if no data, stop here
+  if (!data || !data[0]) return [];
 
-  // 1. Get all available keys from the first row
   const allKeys = Object.keys(data[0]);
+  
+  // 1. HARD-CODED MAPPING (Exactly what you have in Standard Report)
+  const amountKey = "Amount($)";
+  const weightKey = "Weight(Kg)";
+  const txnKey = "Transactions";
+  
+  // Find Name: Priority 1: Exporter, Priority 2: Importer, Priority 3: Entity
+  const nameKey = allKeys.find(k => k.trim() === "Exporter") || 
+                  allKeys.find(k => k.trim() === "Importer") || 
+                  allKeys.find(k => k.trim() === "Entity") || 
+                  "_label";
 
-  // 2. Identify the Name Column
-  // We prioritize the prop, then the _label from PapaParse, then the first column
-  const nameKey = props.nameKey || 
-                  allKeys.find(k => k === "_label") || 
-                  allKeys.find(k => /exporter|importer/i.test(k)) || 
-                  allKeys[0];
-
-  // 3. Identify Metric Keys
-  // We look for the exact names you provided
-  const amountKey = allKeys.find(k => k.includes("Amount")) || allKeys.find(k => k.includes("$")) || "Amount";
-  const weightKey = allKeys.find(k => k.includes("Weight")) || "Weight";
-  const txnKey = allKeys.find(k => k.toLowerCase().includes("transaction")) || "Transactions";
-
-  return data.map(r => {
-    // Helper to extract number
+  const results = data.map(r => {
     const toNum = (val) => {
       if (typeof val === 'number') return val;
       const n = parseFloat(String(val || 0).replace(/[^\d.-]/g, ''));
@@ -51,9 +45,12 @@ const processedData = useMemo(() => {
     
     const currentVal = basis === "Weight" ? wgt : (basis === "Transactions" ? txs : amt);
 
+    // If _label is "Unknown Entity", try to grab the value from the nameKey column
+    let label = (r[nameKey] || r._label || "Unknown Entity").toString().trim();
+    
     return {
       ...r,
-      _label: r[nameKey] || r._label || "Unknown Entity",
+      _label: label === "Unknown Entity" && r[allKeys[0]] ? r[allKeys[0]] : label,
       _basisVal: currentVal,
       _txns: txs,
       x: wgt,
@@ -61,17 +58,23 @@ const processedData = useMemo(() => {
       _debugNameKey: nameKey,
       _debugTxnKey: txnKey
     };
-  }).map((item, _, arr) => {
-    const sorted = arr.map(i => i._basisVal).sort((a, b) => a - b);
-    const p70 = sorted[Math.floor(sorted.length * 0.70)] || 0;
-    const p90 = sorted[Math.floor(sorted.length * 0.90)] || 0;
-    item._risk = item._basisVal >= p90 ? "high" : (item._basisVal >= p70 ? "med" : "low");
-    return item;
   });
-}, [data, basis, props.nameKey]);
+
+  // 2. RISK & SORTING (Descending)
+  const vals = results.map(i => i._basisVal).sort((a, b) => a - b);
+  const p70 = vals[Math.floor(vals.length * 0.7)] || 0;
+  const p90 = vals[Math.floor(vals.length * 0.9)] || 0;
+
+  return results.map(item => ({
+    ...item,
+    _risk: item._basisVal >= p90 ? "high" : (item._basisVal >= p70 ? "med" : "low")
+  })).sort((a, b) => b._basisVal - a._basisVal);
+
+}, [data, basis]);
 
   const countryVolume = useMemo(() => {
     const counts = {};
+    if (!processedData) return counts;
     processedData.forEach(r => {
       const c = r.Country || r.Origin || r.country;
       if (c && typeof c === 'string') {
@@ -82,25 +85,24 @@ const processedData = useMemo(() => {
     return counts;
   }, [processedData]);
 
-
   const sortedCountries = Object.entries(countryVolume).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxVol = Math.max(...Object.values(countryVolume), 1);
-  const outliers = [...processedData].sort((a, b) => b._basisVal - a._basisVal).slice(0, 5);
+  // outliers uses the already sorted processedData
+  const outliers = processedData.slice(0, 5);
 
-
-  if (!data.length) return <div style={{padding: '20px'}}>Processing charts...</div>;
-
+  if (!data || data.length === 0) return <div style={{padding: '20px'}}>No data available for charts...</div>;
+  if (!processedData || processedData.length === 0) return <div style={{padding: '20px'}}>Processing data...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-        {/* DEBUG HEADER - REMOVE AFTER FIXING */}
-      <div style={{ background: '#fff3cd', padding: '10px', borderRadius: '8px', fontSize: '11px', border: '1px solid #ffeeba', color: '#856404' }}>
-        <b>🔍 Data Link Status:</b> 
-        <span style={{ marginLeft: '15px' }}>Found Name via: <b>{processedData[0]?._debugNameKey || "NOT FOUND"}</b></span>
-        <span style={{ marginLeft: '15px' }}>Found Txns via: <b>{processedData[0]?._debugTxnKey || "NOT FOUND"}</b></span>
-        <span style={{ marginLeft: '15px' }}>Sample Label: <b>{processedData[0]?._label}</b></span>
-      </div>
-     
+
+      <div style={{ background: '#fff3cd', padding: '10px', borderRadius: '8px', fontSize: '10px', border: '1px solid #ffeeba' }}>
+  <b>System Headers:</b> {processedData[0]?._allKeysFound} <br/>
+  <b>Link Status:</b> Name via: [{processedData[0]?._debugNameKey}] | 
+  Txns via: [{processedData[0]?._debugTxnKey}] | 
+  Sample: <b>{processedData[0]?._label}</b>
+</div>
+      
       {/* 1. TABS & RISK INDICATORS */}
       <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -120,7 +122,6 @@ const processedData = useMemo(() => {
            ))}
         </div>
       </div>
-
 
       {/* 2. HIGH RISK & OUTLIERS */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
@@ -146,8 +147,7 @@ const processedData = useMemo(() => {
         </div>
       </div>
 
-
-      {/* 3. SCATTER & BAR CHARTS (FIXED COLORS & CLIPPING) */}
+      {/* 3. SCATTER & BAR CHARTS */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px' }}>
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px' }}>
           <h4 style={{color: '#1e3a8a'}}>Risk Matrix (Weight vs Value)</h4>
@@ -168,7 +168,6 @@ const processedData = useMemo(() => {
                       onMouseLeave={() => setHoveredEntity(null)}
                       shape={(props) => (
                         <g style={{ cursor: 'pointer' }}>
-                          {/* CONCENTRIC RINGS RESTORED */}
                           {entry._risk === "high" && <circle cx={props.cx} cy={props.cy} r={14} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="3 2" />}
                           {entry._risk === "med" && <circle cx={props.cx} cy={props.cy} r={10} fill="none" stroke={color} strokeWidth={1} strokeDasharray="4 2" />}
                           <circle cx={props.cx} cy={props.cy} r={hoveredEntity === entry._label ? 8 : 6} fill={hoveredEntity === entry._label ? "#1e3a8a" : color} stroke="#fff" strokeWidth={1} />
@@ -194,38 +193,35 @@ const processedData = useMemo(() => {
         </div>
       </div>
 
+      {/* 4. INTERACTIVE RISK MATRIX TABLE */}
+      <div style={{ background: '#fff', borderRadius: '12px', border: '2px solid #1e3a8a', overflow: 'hidden' }}>
+        <div style={{ background: '#1e3a8a', color: '#fff', padding: '10px 20px', fontWeight: 'bold' }}>Interactive Risk Matrix</div>
+        <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#f8fafc', position: 'sticky', top: 0 }}>
+                <th style={{ padding: '12px' }}>Entity</th>
+                <th>Amount (USD)</th>
+                <th>Weight (kg)</th>
+                <th>Transactions</th>
+                <th>Risk Analysis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {processedData.map((r, i) => (
+                <tr key={i} style={{ background: hoveredEntity === r._label ? '#eff6ff' : 'transparent', borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '10px 12px' }}>{r._label}</td>
+                  <td>${r.y.toLocaleString()}</td>
+                  <td>{r.x.toLocaleString()} kg</td>
+                  <td>{r._txns.toLocaleString()}</td>
+                  <td><span style={{ padding: '2px 8px', borderRadius: '10px', background: RISK_COLORS[r._risk], color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>{r._risk.toUpperCase()}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-     {/* 4. INTERACTIVE RISK MATRIX TABLE */}
-<div style={{ background: '#fff', borderRadius: '12px', border: '2px solid #1e3a8a', overflow: 'hidden' }}>
-  <div style={{ background: '#1e3a8a', color: '#fff', padding: '10px 20px', fontWeight: 'bold' }}>Interactive Risk Matrix</div>
-  <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-      <thead>
-        <tr style={{ textAlign: 'left', background: '#f8fafc', position: 'sticky', top: 0 }}>
-          {/* DYNAMIC HEADER LOGIC BELOW */}
-          <th style={{ padding: '12px' }}>
-            {props.nameKey || (processedData[0] && Object.keys(processedData[0]).find(k => /importer/i.test(k)) ? 'Importer' : 'Exporter')}
-          </th>
-          <th>Amount (USD)</th>
-          <th>Weight (kg)</th>
-          <th>Transactions</th>
-          <th>Risk Analysis</th>
-        </tr>
-      </thead>
-      <tbody>
-        {processedData.map((r, i) => (
-          <tr key={i} style={{ background: hoveredEntity === r._label ? '#eff6ff' : 'transparent', borderBottom: '1px solid #f1f5f9' }}>
-            <td style={{ padding: '10px 12px' }}>{r._label}</td>
-            <td>${r.y.toLocaleString()}</td>
-            <td>{r.x.toLocaleString()} kg</td>
-            <td>{r._txns.toLocaleString()}</td>
-            <td><span style={{ padding: '2px 8px', borderRadius: '10px', background: RISK_COLORS[r._risk], color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>{r._risk.toUpperCase()}</span></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-</div>
       {/* 5. MAP & PIE CHART */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '25px' }}>
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', display: 'flex', gap: '15px' }}>
@@ -254,22 +250,21 @@ const processedData = useMemo(() => {
           </div>
         </div>
 
-
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px' }}>
           <h4 style={{ color: '#1e3a8a' }}>Risk Distribution</h4>
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
               <Pie data={[
-                  { name: 'Low', value: processedData.filter(x => x._risk === 'low').reduce((s, c) => s + c._basisVal, 0) },
-                  { name: 'Med', value: processedData.filter(x => x._risk === 'med').reduce((s, c) => s + c._basisVal, 0) },
-                  { name: 'High', value: processedData.filter(x => x._risk === 'high').reduce((s, c) => s + c._basisVal, 0) }
+                  { name: 'Low', value: processedData.filter(x => x._risk === 'low').length },
+                  { name: 'Med', value: processedData.filter(x => x._risk === 'med').length },
+                  { name: 'High', value: processedData.filter(x => x._risk === 'high').length }
                 ]}
                 dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}
-                label={({ percent }) => percent > 0.05 ? `${(percent * 100).toFixed(0)}%` : ""}
+                label={({ name, percent }) => percent > 0.05 ? `${name} ${(percent * 100).toFixed(0)}%` : ""}
               >
                 <Cell fill={RISK_COLORS.low} /><Cell fill={RISK_COLORS.med} /><Cell fill={RISK_COLORS.high} />
               </Pie>
-              <Tooltip formatter={v => v.toLocaleString()} />
+              <Tooltip formatter={v => `${v} Entities`} />
               <Legend verticalAlign="bottom" height={36}/>
             </PieChart>
           </ResponsiveContainer>
